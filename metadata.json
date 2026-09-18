@@ -1,0 +1,6 @@
+{
+  "name": "ZSET Leszno Gayspace",
+  "description": "Podziemna platforma społecznościowa dla społeczności ZSET Leszno z czatem grupowym, kołem fortuny, metronomem i ogłoszeniami.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

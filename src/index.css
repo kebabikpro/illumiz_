@@ -1,0 +1,153 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  html, body {
+    max-width: 100vw;
+    overflow-x: hidden;
+    margin: 0;
+    padding: 0;
+    width: 100%;
+  }
+  body {
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    transition: background-color 0.25s ease, color 0.25s ease;
+  }
+  h1, h2, h3, h4, .font-display {
+    font-family: 'Outfit', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  }
+}
+
+/* -------------------------------------------------------------
+   THEME STYLES - Ensures the entire page changes appearance
+   ------------------------------------------------------------- */
+
+/* 1. Midnight Pride (Default Dark) */
+html[data-individual-theme="midnight-pride"] body,
+html[data-individual-theme="midnight-pride"] #root > div,
+.theme-midnight-pride {
+  background-color: #0c081c !important;
+  color: #f1f5f9 !important;
+}
+html[data-individual-theme="midnight-pride"] header {
+  background-color: rgba(12, 8, 28, 0.9) !important;
+  border-color: rgba(168, 85, 247, 0.25) !important;
+}
+html[data-individual-theme="midnight-pride"] .dark\:bg-slate-900,
+html[data-individual-theme="midnight-pride"] .dark\:bg-slate-950 {
+  background-color: #150e2a !important;
+  border-color: rgba(168, 85, 247, 0.22) !important;
+}
+html[data-individual-theme="midnight-pride"] .dark\:bg-slate-800 {
+  background-color: #1d133a !important;
+}
+
+/* 2. Rainbow Light (Clean Bright) */
+html[data-individual-theme="rainbow-light"] body,
+html[data-individual-theme="rainbow-light"] #root > div,
+.theme-rainbow-light {
+  background-color: #f8fafc !important;
+  color: #0f172a !important;
+}
+html[data-individual-theme="rainbow-light"] header {
+  background-color: rgba(255, 255, 255, 0.95) !important;
+  border-color: #e2e8f0 !important;
+}
+html[data-individual-theme="rainbow-light"] .bg-white {
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
+}
+
+/* 3. Cyberpunk TI / TP (Tech Cyan) */
+html[data-individual-theme="cyberpunk-ti"] body,
+html[data-individual-theme="cyberpunk-ti"] #root > div,
+.theme-cyberpunk-ti {
+  background-color: #030a16 !important;
+  color: #e0f2fe !important;
+}
+html[data-individual-theme="cyberpunk-ti"] header {
+  background-color: rgba(3, 10, 22, 0.92) !important;
+  border-color: rgba(6, 182, 212, 0.35) !important;
+}
+html[data-individual-theme="cyberpunk-ti"] .dark\:bg-slate-900,
+html[data-individual-theme="cyberpunk-ti"] .dark\:bg-slate-950 {
+  background-color: #07152b !important;
+  border-color: rgba(6, 182, 212, 0.3) !important;
+}
+html[data-individual-theme="cyberpunk-ti"] .dark\:bg-slate-800 {
+  background-color: #0c2242 !important;
+}
+
+/* 4. Sunset Rynek (Warm Wine & Amber) */
+html[data-individual-theme="sunset-rynek"] body,
+html[data-individual-theme="sunset-rynek"] #root > div,
+.theme-sunset-rynek {
+  background-color: #170514 !important;
+  color: #fff1f2 !important;
+}
+html[data-individual-theme="sunset-rynek"] header {
+  background-color: rgba(23, 5, 20, 0.92) !important;
+  border-color: rgba(244, 63, 94, 0.3) !important;
+}
+html[data-individual-theme="sunset-rynek"] .dark\:bg-slate-900,
+html[data-individual-theme="sunset-rynek"] .dark\:bg-slate-950 {
+  background-color: #260b20 !important;
+  border-color: rgba(244, 63, 94, 0.28) !important;
+}
+html[data-individual-theme="sunset-rynek"] .dark\:bg-slate-800 {
+  background-color: #381230 !important;
+}
+
+/* 5. Emerald & Spokój (Forest Green & Mint) */
+html[data-individual-theme="emerald-green"] body,
+html[data-individual-theme="emerald-green"] #root > div,
+.theme-emerald-green {
+  background-color: #03140d !important;
+  color: #ecfdf5 !important;
+}
+html[data-individual-theme="emerald-green"] header {
+  background-color: rgba(3, 20, 13, 0.92) !important;
+  border-color: rgba(16, 185, 129, 0.3) !important;
+}
+html[data-individual-theme="emerald-green"] .dark\:bg-slate-900,
+html[data-individual-theme="emerald-green"] .dark\:bg-slate-950 {
+  background-color: #072519 !important;
+  border-color: rgba(16, 185, 129, 0.28) !important;
+}
+html[data-individual-theme="emerald-green"] .dark\:bg-slate-800 {
+  background-color: #0c3826 !important;
+}
+
+/* 6. AMOLED Pure Black (True 0% Black) */
+html[data-individual-theme="amoled-dark"] body,
+html[data-individual-theme="amoled-dark"] #root > div,
+.theme-amoled-dark {
+  background-color: #000000 !important;
+  color: #ffffff !important;
+}
+html[data-individual-theme="amoled-dark"] header {
+  background-color: rgba(0, 0, 0, 0.95) !important;
+  border-color: rgba(255, 255, 255, 0.18) !important;
+}
+html[data-individual-theme="amoled-dark"] .dark\:bg-slate-900,
+html[data-individual-theme="amoled-dark"] .dark\:bg-slate-950 {
+  background-color: #080808 !important;
+  border-color: rgba(255, 255, 255, 0.18) !important;
+}
+html[data-individual-theme="amoled-dark"] .dark\:bg-slate-800 {
+  background-color: #121212 !important;
+}
+
+@keyframes bounce-short {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+.animate-bounce-short {
+  animation: bounce-short 0.6s ease-in-out;
+}
