@@ -37,6 +37,9 @@ export const GamesHub: React.FC = () => {
   const [isXNext, setIsXNext] = useState(true);
   const [gameMode, setGameMode] = useState<'pvp' | 'ai'>('ai');
   const [aiDifficulty, setAiDifficulty] = useState<'easy' | 'hard'>('hard');
+  // Opcja kolejności startu z botem: 'alternate' (na zmianę: raz gracz, raz bot), 'player' (zawsze gracz), 'bot' (zawsze bot)
+  const [aiStarterMode, setAiStarterMode] = useState<'alternate' | 'player' | 'bot'>('alternate');
+  const [roundStarter, setRoundStarter] = useState<'player' | 'bot'>('player');
   const [scores, setScores] = useState({ x: 0, o: 0, ties: 0 });
   const [winnerInfo, setWinnerInfo] = useState<{ winner: string | null; line: number[] | null }>({
     winner: null,
@@ -142,10 +145,39 @@ export const GamesHub: React.FC = () => {
     }
   }, [gameMode, isXNext, board, winnerInfo.winner, aiDifficulty]);
 
-  const resetTicTacToe = () => {
+  const resetTicTacToe = (forcedStarter?: 'player' | 'bot') => {
     setBoard(Array(9).fill(null));
-    setIsXNext(true);
     setWinnerInfo({ winner: null, line: null });
+
+    if (gameMode === 'ai') {
+      let nextStarter: 'player' | 'bot';
+      if (forcedStarter) {
+        nextStarter = forcedStarter;
+      } else if (aiStarterMode === 'alternate') {
+        // Na zmianę: raz gracz, raz bot
+        nextStarter = roundStarter === 'player' ? 'bot' : 'player';
+      } else if (aiStarterMode === 'bot') {
+        nextStarter = 'bot';
+      } else {
+        nextStarter = 'player';
+      }
+
+      setRoundStarter(nextStarter);
+      // Gdy zaczyna bot, ustawiamy isXNext na false co wyzwala ruch bota (O)
+      setIsXNext(nextStarter === 'player');
+    } else {
+      setIsXNext(true);
+      setRoundStarter('player');
+    }
+  };
+
+  const handleStarterModeChange = (mode: 'alternate' | 'player' | 'bot') => {
+    setAiStarterMode(mode);
+    const initialStarter = mode === 'bot' ? 'bot' : 'player';
+    setRoundStarter(initialStarter);
+    setBoard(Array(9).fill(null));
+    setWinnerInfo({ winner: null, line: null });
+    setIsXNext(initialStarter === 'player');
   };
 
   // ==========================================
@@ -446,22 +478,47 @@ export const GamesHub: React.FC = () => {
           {/* Main Board Area */}
           <div className="lg:col-span-8 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-xl flex flex-col items-center">
             {/* Status bar */}
-            <div className="w-full max-w-md flex items-center justify-between mb-6">
-              <div className="flex items-center gap-2">
+            <div className="w-full max-w-md flex flex-wrap items-center justify-between gap-3 mb-6">
+              <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xs text-slate-500 dark:text-slate-400 font-semibold uppercase">Tura:</span>
                 <span
-                  className={`px-3 py-1 rounded-xl text-xs font-black flex items-center gap-1.5 ${
+                  className={`px-3 py-1 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all ${
                     isXNext
                       ? 'bg-pink-500/10 text-pink-600 dark:text-pink-400 border border-pink-500/20'
                       : 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20'
                   }`}
                 >
-                  <span>{isXNext ? '❌ Gracz X' : gameMode === 'ai' ? '🤖 Bot ZSET (O)' : '⭕ Gracz O'}</span>
+                  <span>
+                    {isXNext
+                      ? '❌ Twój ruch (Gracz X)'
+                      : gameMode === 'ai'
+                      ? '🤖 Bot ZSET myśli... (O)'
+                      : '⭕ Gracz O'}
+                  </span>
                 </span>
+
+                {gameMode === 'ai' && (
+                  <span
+                    title={
+                      aiStarterMode === 'alternate'
+                        ? 'Tryb na zmianę: raz zaczyna gracz, raz bot'
+                        : aiStarterMode === 'player'
+                        ? 'Zawsze zaczyna gracz'
+                        : 'Zawsze zaczyna bot'
+                    }
+                    className="text-[11px] px-2.5 py-1 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-700 dark:text-purple-300 font-semibold flex items-center gap-1"
+                  >
+                    <span>Startował:</span>
+                    <strong className="font-bold">{roundStarter === 'player' ? '👤 Gracz' : '🤖 Bot'}</strong>
+                    {aiStarterMode === 'alternate' && (
+                      <span className="text-[10px] text-purple-500 dark:text-purple-400 font-bold">(na zmianę)</span>
+                    )}
+                  </span>
+                )}
               </div>
 
               <button
-                onClick={resetTicTacToe}
+                onClick={() => resetTicTacToe()}
                 className="px-3.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
@@ -512,10 +569,12 @@ export const GamesHub: React.FC = () => {
                   )}
                 </div>
                 <button
-                  onClick={resetTicTacToe}
+                  onClick={() => resetTicTacToe()}
                   className="mt-2.5 px-4 py-1.5 rounded-xl bg-white text-purple-900 font-bold text-xs hover:bg-slate-100 transition-colors shadow-sm cursor-pointer"
                 >
-                  Zagraj jeszcze raz
+                  {aiStarterMode === 'alternate' && gameMode === 'ai'
+                    ? `Zagraj jeszcze raz (kolej na: ${roundStarter === 'player' ? '🤖 Bota' : '👤 Gracza'})`
+                    : 'Zagraj jeszcze raz'}
                 </button>
               </div>
             )}
@@ -614,6 +673,59 @@ export const GamesHub: React.FC = () => {
                     >
                       Trudny (Informatyk)
                     </button>
+                  </div>
+
+                  {/* Kto zaczyna z botem (opcja żądana przez użytkownika) */}
+                  <div className="pt-3 border-t border-slate-200 dark:border-slate-800 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-semibold text-slate-600 dark:text-slate-400">
+                        Kto zaczyna z botem:
+                      </label>
+                      <span className="text-[10px] text-purple-600 dark:text-purple-400 font-bold">
+                        {aiStarterMode === 'alternate' ? 'Na zmianę' : aiStarterMode === 'player' ? 'Gracz' : 'Bot'}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-1.5">
+                      <button
+                        onClick={() => handleStarterModeChange('alternate')}
+                        title="Na zmianę: raz zaczynasz Ty, a raz zaczyna Bot ZSET"
+                        className={`py-2 px-1.5 rounded-xl text-[11px] font-bold transition-all cursor-pointer flex flex-col items-center gap-0.5 text-center ${
+                          aiStarterMode === 'alternate'
+                            ? 'bg-purple-600 text-white shadow-sm ring-2 ring-purple-600/30'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                        }`}
+                      >
+                        <span className="flex items-center gap-1">🔄 Na zmianę</span>
+                        <span className="text-[9px] opacity-75 font-normal">Raz gracz, raz bot</span>
+                      </button>
+
+                      <button
+                        onClick={() => handleStarterModeChange('player')}
+                        title="Zawsze zaczyna gracz (X)"
+                        className={`py-2 px-1.5 rounded-xl text-[11px] font-bold transition-all cursor-pointer flex flex-col items-center gap-0.5 text-center ${
+                          aiStarterMode === 'player'
+                            ? 'bg-purple-600 text-white shadow-sm ring-2 ring-purple-600/30'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                        }`}
+                      >
+                        <span className="flex items-center gap-1">👤 Gracz</span>
+                        <span className="text-[9px] opacity-75 font-normal">Zawsze Ty (X)</span>
+                      </button>
+
+                      <button
+                        onClick={() => handleStarterModeChange('bot')}
+                        title="Zawsze zaczyna bot (O)"
+                        className={`py-2 px-1.5 rounded-xl text-[11px] font-bold transition-all cursor-pointer flex flex-col items-center gap-0.5 text-center ${
+                          aiStarterMode === 'bot'
+                            ? 'bg-purple-600 text-white shadow-sm ring-2 ring-purple-600/30'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                        }`}
+                      >
+                        <span className="flex items-center gap-1">🤖 Bot</span>
+                        <span className="text-[9px] opacity-75 font-normal">Zawsze Bot (O)</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}

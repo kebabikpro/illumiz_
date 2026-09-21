@@ -132,6 +132,17 @@ export function getLocalData(): AppStateData {
     
     // Filter out only the legacy mock message without wiping real user messages
     let cleanedMessages = Array.isArray(parsed.chatMessages) ? parsed.chatMessages : [];
+    if (cleanedMessages.length === 0) {
+      try {
+        const cached = localStorage.getItem('zset_chat_cache_v1');
+        if (cached) {
+          const parsedCache = JSON.parse(cached);
+          if (Array.isArray(parsedCache) && parsedCache.length > 0) {
+            cleanedMessages = parsedCache;
+          }
+        }
+      } catch {}
+    }
     cleanedMessages = cleanedMessages.filter((m: ChatMessage) => m && m.id !== 'msg-1' && !m.text?.includes('Parku 1000-lecia po 7 lekcji'));
 
     // Purge any old preset wheel options if user had old presets stored

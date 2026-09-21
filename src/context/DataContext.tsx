@@ -119,6 +119,52 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
   }, []);
 
+  // Global shared chat real-time synchronization across all tabs, devices and accounts
+  useEffect(() => {
+    let isMounted = true;
+    const fetchChat = async () => {
+      try {
+        const res = await fetch('/api/chat/messages');
+        if (res.ok) {
+          const json = await res.json();
+          if (json.success && Array.isArray(json.messages) && isMounted) {
+            setData((prev) => {
+              // Deep equality check on count, last message and reactions to prevent useless re-renders
+              const currentMsgs = prev.chatMessages || [];
+              if (
+                currentMsgs.length === json.messages.length &&
+                currentMsgs[currentMsgs.length - 1]?.id === json.messages[json.messages.length - 1]?.id
+              ) {
+                const hasDifferences = currentMsgs.some((m, idx) => {
+                  const incoming = json.messages[idx];
+                  if (!incoming) return true;
+                  return JSON.stringify(m.reactions || {}) !== JSON.stringify(incoming.reactions || {});
+                });
+                if (!hasDifferences) return prev;
+              }
+
+              try {
+                localStorage.setItem('zset_chat_cache_v1', JSON.stringify(json.messages));
+              } catch {}
+
+              return {
+                ...prev,
+                chatMessages: json.messages,
+              };
+            });
+          }
+        }
+      } catch {}
+    };
+
+    fetchChat();
+    const interval = setInterval(fetchChat, 2000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, []);
+
   // Individual Theme Switcher (ONLY affects this client/browser, not other users)
   const setIndividualTheme = (theme: IndividualThemeId) => {
     setActiveThemeState(theme);
@@ -186,15 +232,19 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const setChatMessages = (updater: ChatMessage[] | ((prev: ChatMessage[]) => ChatMessage[])) => {
     setData((prev) => {
-      const nextMsgs = typeof updater === 'function' ? updater(prev.chatMessages) : updater;
-      saveAllData({ chatMessages: nextMsgs });
+      const nextMsgs = typeof updater === 'function' ? updater(prev.chatMessages || []) : updater;
+      try {
+        localStorage.setItem('zset_chat_cache_v1', JSON.stringify(nextMsgs));
+      } catch {}
       return { ...prev, chatMessages: nextMsgs };
     });
   };
 
   const clearChatMessages = () => {
     setData((prev) => {
-      saveAllData({ chatMessages: [] });
+      try {
+        localStorage.removeItem('zset_chat_cache_v1');
+      } catch {}
       return { ...prev, chatMessages: [] };
     });
   };

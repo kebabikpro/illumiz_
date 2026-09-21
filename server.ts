@@ -212,31 +212,17 @@ function writeStoredData(data: Record<string, unknown>) {
 const existingData = readStoredData();
 writeStoredData(existingData);
 
-// 3-day retention policy for chat messages
-const CHAT_RETENTION_MS = 3 * 24 * 60 * 60 * 1000; // 3 days in milliseconds
-
-function pruneExpiredChatMessages(messages: any[]): { cleaned: any[]; purgedCount: number } {
-  if (!Array.isArray(messages)) return { cleaned: [], purgedCount: 0 };
-  const now = Date.now();
-  const cleaned = messages.filter((msg) => {
-    if (!msg) return false;
-    // Check createdAt ISO string first
-    if (msg.createdAt) {
-      const msgTime = new Date(msg.createdAt).getTime();
-      if (!isNaN(msgTime) && (now - msgTime) > CHAT_RETENTION_MS) {
-        return false;
-      }
-    } else if (msg.id && typeof msg.id === 'string' && msg.id.startsWith('msg-')) {
-      // Fallback timestamp parse from msg-{epoch}-{random}
-      const parts = msg.id.split('-');
-      const ts = parseInt(parts[1], 10);
-      if (!isNaN(ts) && (now - ts) > CHAT_RETENTION_MS) {
-        return false;
-      }
-    }
+// Permanent shared chat retention policy (never auto-purge or expire messages)
+function sanitizeChatMessages(messages: any[]): any[] {
+  if (!Array.isArray(messages)) return [];
+  const seen = new Set<string>();
+  return messages.filter((msg) => {
+    if (!msg || typeof msg !== 'object') return false;
+    const id = String(msg.id || '');
+    if (!id || seen.has(id)) return false;
+    seen.add(id);
     return true;
   });
-  return { cleaned, purgedCount: messages.length - cleaned.length };
 }
 
 // API Endpoints for Google AI Studio local filesystem persistence
@@ -246,11 +232,7 @@ app.get('/api/health', (req, res) => {
 
 app.get('/api/storage', (req, res) => {
   const data = readStoredData();
-  const { cleaned, purgedCount } = pruneExpiredChatMessages(data.chatMessages || []);
-  if (purgedCount > 0) {
-    data.chatMessages = cleaned;
-    writeStoredData(data);
-  }
+  data.chatMessages = sanitizeChatMessages(data.chatMessages || []);
   res.json({
     success: true,
     storageType: 'Google AI Studio Local Storage',
@@ -300,7 +282,7 @@ app.post('/api/storage', (req, res) => {
       }
     }
   }
-  const { cleaned: prunedChatMessages } = pruneExpiredChatMessages(mergedChatMessages);
+  const mergedChatMessagesCleaned = sanitizeChatMessages(mergedChatMessages);
 
   // Keep global userProfile neutral; each user manages their own session via registeredAccounts
   const cleanGuestProfile = getInitialCleanState().userProfile;
@@ -309,7 +291,7 @@ app.post('/api/storage', (req, res) => {
     ...current,
     ...incoming,
     userProfile: cleanGuestProfile,
-    chatMessages: prunedChatMessages,
+    chatMessages: mergedChatMessagesCleaned,
     registeredAccounts: mergedAccounts,
     lastSaved: new Date().toISOString(),
   };
@@ -322,7 +304,7 @@ app.post('/api/storage', (req, res) => {
       lastSaved: merged.lastSaved,
       storageFile: 'data/storage.json',
       registeredAccountsCount: mergedAccounts.length,
-      chatMessagesCount: prunedChatMessages.length,
+      chatMessagesCount: mergedChatMessagesCleaned.length,
     });
   } else {
     res.status(500).json({ success: false, error: 'Nie udało się zapisać pliku w Google AI Studio' });
@@ -333,19 +315,14 @@ app.post('/api/storage', (req, res) => {
 // UNIFIED REAL-TIME CHAT API (Server-Authoritative)
 // ==========================================
 
-// Get all current chat messages (auto-pruned with 3-day retention)
+// Get all current chat messages (permanent shared chat for all accounts and devices)
 app.get('/api/chat/messages', (req, res) => {
   const data = readStoredData();
-  const { cleaned, purgedCount } = pruneExpiredChatMessages(data.chatMessages || []);
-  if (purgedCount > 0) {
-    data.chatMessages = cleaned;
-    writeStoredData(data);
-  }
+  const safeMessages = sanitizeChatMessages(data.chatMessages || []);
   res.json({
     success: true,
-    messages: cleaned,
+    messages: safeMessages,
     serverTime: new Date().toISOString(),
-    retentionDays: 3,
   });
 });
 
@@ -392,8 +369,7 @@ app.post('/api/chat/messages', (req, res) => {
   };
 
   data.chatMessages.push(newMsg);
-  const { cleaned } = pruneExpiredChatMessages(data.chatMessages);
-  data.chatMessages = cleaned;
+  data.chatMessages = sanitizeChatMessages(data.chatMessages);
   writeStoredData(data);
 
   res.json({
