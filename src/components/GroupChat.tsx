@@ -40,6 +40,8 @@ export const GroupChat: React.FC = () => {
   const [inputMessage, setInputMessage] = useState('');
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<{ id: string; text: string; isMe: boolean } | null>(null);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -53,7 +55,7 @@ export const GroupChat: React.FC = () => {
     const time = new Date().toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' });
 
     const newMsg: ChatMessage = {
-      id: 'msg-' + Date.now(),
+      id: 'msg-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
       senderId: profile.id,
       sender: profile.displayName || profile.nick || 'Uczeń ZSET',
       username: profile.username || 'uczen_zset',
@@ -87,17 +89,14 @@ export const GroupChat: React.FC = () => {
     );
 
     if (!isSender && !isAdmin) {
-      alert('Możesz usunąć tylko swoją własną wiadomość.');
       return;
     }
 
-    const confirmText = isSender 
-      ? 'Czy na pewno chcesz usunąć swoją wiadomość?' 
-      : 'Czy na pewno chcesz usunąć tę wiadomość jako administrator?';
-
-    if (confirm(confirmText)) {
-      setChatMessages((prev) => prev.filter((m) => m.id !== msgId));
-    }
+    setDeleteConfirmTarget({
+      id: target.id,
+      text: target.text,
+      isMe: isSender,
+    });
   };
 
   const handleAddReaction = (msgId: string, emoji: string) => {
@@ -120,12 +119,9 @@ export const GroupChat: React.FC = () => {
 
   const handleClearChat = () => {
     if (!isAdmin) {
-      alert('Tylko administrator może wyczyścić cały czat.');
       return;
     }
-    if (confirm('Czy na pewno chcesz wyczyścić historię czatu na czysto?')) {
-      clearChatMessages();
-    }
+    setShowClearConfirm(true);
   };
 
   const quickEmojis = ['🏳️‍🌈', '❤️', '🔥', '☕', '✨', '😂', '👍', '🍕'];
@@ -227,7 +223,7 @@ export const GroupChat: React.FC = () => {
           {/* Welcome note */}
           <div className="text-center py-1">
             <span className="inline-block px-3 py-1 rounded-full bg-purple-100 dark:bg-purple-950/50 text-purple-700 dark:text-purple-300 text-xs font-semibold">
-              🏳️‍🌈 Bezpieczny czat grupy ZSET • Wiadomości są zapisywane lokalnie oraz w Google AI Studio
+              🏳️‍🌈 Bezpieczny czat grupy ZSET • Dyskretna i prywatna przestrzeń dla uczniów
             </span>
           </div>
 
@@ -489,11 +485,11 @@ export const GroupChat: React.FC = () => {
           <div className="space-y-2.5 text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
             <div className="flex items-start gap-2">
               <span className="text-emerald-500 text-base leading-none">✓</span>
-              <span><strong>Brak fałszywych osób:</strong> Wszystkie przykładowe konta online zostały trwale usunięte.</span>
+              <span><strong>Brak fałszywych osób:</strong> W pokoju rozmawiają wyłącznie autentyczni użytkownicy.</span>
             </div>
             <div className="flex items-start gap-2">
               <span className="text-emerald-500 text-base leading-none">✓</span>
-              <span><strong>Podwójna trwałość:</strong> Każda wiadomość zapisuje się w Twojej pamięci lokalnej oraz w Google AI Studio.</span>
+              <span><strong>Prywatność i trwałość:</strong> Twoje wiadomości i reakcje są bezpiecznie zapisywane z Twoim kontem.</span>
             </div>
             <div className="flex items-start gap-2">
               <span className="text-emerald-500 text-base leading-none">✓</span>
@@ -503,15 +499,95 @@ export const GroupChat: React.FC = () => {
 
           <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px] text-slate-400">
             <span>Wiadomości w wątku: {messages.length}</span>
-            <button
-              onClick={handleClearChat}
-              className="text-rose-500 hover:underline cursor-pointer"
-            >
-              Wyczyść czat
-            </button>
+            {isAdmin && (
+              <button
+                onClick={handleClearChat}
+                className="text-rose-500 hover:underline cursor-pointer"
+              >
+                Wyczyść czat
+              </button>
+            )}
           </div>
         </div>
       </div>
+
+      {/* Confirmation Modal for Message Deletion (Never blocked by iframe restrictions) */}
+      {deleteConfirmTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-sm w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-rose-500/10 text-rose-500 flex items-center justify-center flex-shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="font-bold text-base text-slate-900 dark:text-white">Usuń wiadomość</h4>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  {deleteConfirmTarget.isMe ? 'Czy na pewno chcesz usunąć swoją wiadomość?' : 'Usunąć tę wiadomość jako administrator?'}
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs text-slate-700 dark:text-slate-300 italic max-h-24 overflow-y-auto break-words">
+              „{deleteConfirmTarget.text}”
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                onClick={() => setDeleteConfirmTarget(null)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+              >
+                Anuluj
+              </button>
+              <button
+                onClick={() => {
+                  setChatMessages((prev) => prev.filter((m) => m.id !== deleteConfirmTarget.id));
+                  setDeleteConfirmTarget(null);
+                }}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white shadow-md cursor-pointer transition-colors"
+              >
+                Usuń wiadomość
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Modal for Clearing Chat History */}
+      {showClearConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-sm w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-rose-500/10 text-rose-500 flex items-center justify-center flex-shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="font-bold text-base text-slate-900 dark:text-white">Wyczyść czat</h4>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Wszystkie wiadomości z wątku zostaną trwale wyczyszczone.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                onClick={() => setShowClearConfirm(false)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+              >
+                Anuluj
+              </button>
+              <button
+                onClick={() => {
+                  clearChatMessages();
+                  setShowClearConfirm(false);
+                }}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white shadow-md cursor-pointer transition-colors"
+              >
+                Wyczyść cały czat
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Dedicated Profile Editor Modal */}
       <ProfileModal

@@ -22,6 +22,7 @@ import { ZsetPrideLogo } from './ZsetPrideLogo';
 import { useAppData } from '../context/DataContext';
 import { INDIVIDUAL_THEMES } from '../utils/themeManager';
 import { IndividualThemeId } from '../types';
+import { ViewModeSwitch, ViewMode } from './ViewModeSwitch';
 
 interface NavbarProps {
   activeTab: 'home' | 'chat' | 'wheel' | 'metronome' | 'games' | 'links';
@@ -31,6 +32,8 @@ interface NavbarProps {
   onPanicExit: () => void;
   onOpenStorageModal: () => void;
   onOpenProfileModal: () => void;
+  viewMode?: ViewMode;
+  onViewModeChange?: (mode: ViewMode) => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -39,6 +42,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   onPanicExit,
   onOpenStorageModal,
   onOpenProfileModal,
+  viewMode = 'auto',
+  onViewModeChange,
 }) => {
   const { data, activeTheme, setIndividualTheme, isAdmin } = useAppData();
   const profile = data.userProfile;
@@ -111,7 +116,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
 
           {/* Desktop Navigation */}
-          <nav className="hidden lg:flex items-center gap-0.5 xl:gap-1 bg-slate-100 dark:bg-slate-900/80 p-1.5 rounded-2xl border border-slate-200/80 dark:border-slate-800 flex-shrink-0">
+          <nav className={`${viewMode === 'mobile' ? 'hidden' : viewMode === 'pc' ? 'flex' : 'hidden lg:flex'} items-center gap-0.5 xl:gap-1 bg-slate-100 dark:bg-slate-900/80 p-1.5 rounded-2xl border border-slate-200/80 dark:border-slate-800 flex-shrink-0`}>
             {navItems.map((item) => {
               const Icon = item.icon;
               const isActive = activeTab === item.id;
@@ -133,8 +138,17 @@ export const Navbar: React.FC<NavbarProps> = ({
             })}
           </nav>
 
-          {/* Controls: Quick Theme, Storage, Panic Button & Prominent User Profile in Top Right */}
+          {/* Controls: View Mode Switcher, Quick Theme, Storage, Panic Button & Prominent User Profile */}
           <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
+            {/* View Mode Switcher (PC / Mobile / Auto) */}
+            {onViewModeChange && (
+              <ViewModeSwitch
+                viewMode={viewMode}
+                onViewModeChange={onViewModeChange}
+                variant="navbar"
+              />
+            )}
+
             {/* Quick Individual Theme Selector Dropdown */}
             <div className="relative" ref={themeMenuRef}>
               <button
@@ -275,7 +289,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
 
         {/* Mobile / Tablet Navigation Row */}
-        <div className="lg:hidden flex items-center justify-between py-2 border-t border-slate-200 dark:border-slate-800 gap-1 overflow-x-auto w-full">
+        <div className={`${viewMode === 'pc' ? 'hidden' : viewMode === 'mobile' ? 'flex' : 'lg:hidden flex'} items-center justify-around py-2 border-t border-slate-200/80 dark:border-slate-800 gap-1 w-full overflow-x-auto`}>
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
@@ -283,14 +297,14 @@ export const Navbar: React.FC<NavbarProps> = ({
               <button
                 key={item.id}
                 onClick={() => setActiveTab(item.id as typeof activeTab)}
-                className={`px-2 py-1 rounded-xl text-xs font-semibold flex flex-col items-center gap-1 transition-all flex-shrink-0 cursor-pointer ${
+                className={`min-h-[44px] px-2.5 py-1 rounded-xl text-xs font-semibold flex flex-col items-center justify-center gap-1 transition-all flex-1 min-w-[50px] cursor-pointer ${
                   isActive
-                    ? 'text-purple-600 dark:text-purple-400 font-bold'
-                    : 'text-slate-500 dark:text-slate-400'
+                    ? 'bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 font-bold shadow-xs'
+                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                 }`}
               >
-                <Icon className="w-4 h-4" />
-                <span className="text-[10px]">{item.label}</span>
+                <Icon className={`w-4 h-4 ${isActive ? 'scale-110' : ''} transition-transform`} />
+                <span className="text-[10px] whitespace-nowrap leading-none">{item.label}</span>
               </button>
             );
           })}

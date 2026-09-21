@@ -88,7 +88,7 @@ export const StorageModal: React.FC<StorageModalProps> = ({ isOpen, onClose }) =
             <div>
               <h3 className="font-bold text-lg font-display">Zapis danych & Kopia zapasowa</h3>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Pamięć przeglądarki + serwer Google AI Studio
+                Pamięć przeglądarki + bezpieczna chmura
               </p>
             </div>
           </div>
@@ -102,16 +102,16 @@ export const StorageModal: React.FC<StorageModalProps> = ({ isOpen, onClose }) =
 
         {/* Status Indicators */}
         <div className="my-5 space-y-2.5">
-          {/* AI Studio server file storage */}
+          {/* Cloud server file storage */}
           <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/70 dark:border-slate-700/60">
             <div className="flex items-center gap-3">
               <Cloud className="w-5 h-5 text-indigo-500" />
               <div>
                 <div className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                  Google AI Studio Storage
+                  Chmura danych społeczności
                 </div>
                 <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                  Plik: <code className="text-purple-600 dark:text-purple-400">data/storage.json</code>
+                  Synchronizacja: <code className="text-purple-600 dark:text-purple-400">Aktywna w czasie rzeczywistym</code>
                 </div>
               </div>
             </div>

@@ -156,9 +156,12 @@ export const GamesHub: React.FC = () => {
   const [brushColor, setBrushColor] = useState('#ec4899'); // Pink default
   const [brushSize, setBrushSize] = useState(6);
   const [isDrawing, setIsDrawing] = useState(false);
-  const [rainbowHue, setRainbowHue] = useState(0);
   const [avatarToast, setAvatarToast] = useState(false);
   const [clearToast, setClearToast] = useState(false);
+
+  // References for smooth continuous drawing without re-renders or recoloring canvas
+  const lastPointRef = useRef<{ x: number; y: number } | null>(null);
+  const rainbowHueRef = useRef<number>(0);
 
   // Initialize white canvas background
   useEffect(() => {
@@ -206,43 +209,65 @@ export const GamesHub: React.FC = () => {
     if (!ctx) return;
 
     setIsDrawing(true);
-    const { x, y } = getCanvasCoordinates(e);
+    const coords = getCanvasCoordinates(e);
+    lastPointRef.current = coords;
 
+    // Draw an initial point dot
     ctx.beginPath();
-    ctx.moveTo(x, y);
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
+    ctx.arc(
+      coords.x, 
+      coords.y, 
+      Math.max(1, (paintTool === 'eraser' ? brushSize * 2.5 : brushSize) / 2), 
+      0, 
+      Math.PI * 2
+    );
+    if (paintTool === 'eraser') {
+      ctx.fillStyle = '#ffffff';
+    } else if (paintTool === 'rainbow') {
+      ctx.fillStyle = `hsl(${rainbowHueRef.current}, 100%, 50%)`;
+    } else {
+      ctx.fillStyle = brushColor;
+    }
+    ctx.fill();
   };
 
   const draw = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
-    if (!isDrawing) return;
+    if (!isDrawing || !lastPointRef.current) return;
     e.preventDefault();
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const { x, y } = getCanvasCoordinates(e);
+    const coords = getCanvasCoordinates(e);
+    const prev = lastPointRef.current;
+
+    // Draw strictly this segment in its own path so previous lines are NEVER recolored
+    ctx.beginPath();
+    ctx.moveTo(prev.x, prev.y);
+    ctx.lineTo(coords.x, coords.y);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
 
     if (paintTool === 'eraser') {
       ctx.strokeStyle = '#ffffff';
       ctx.lineWidth = brushSize * 2.5;
     } else if (paintTool === 'rainbow') {
-      const nextHue = (rainbowHue + 4) % 360;
-      setRainbowHue(nextHue);
-      ctx.strokeStyle = `hsl(${nextHue}, 100%, 55%)`;
+      rainbowHueRef.current = (rainbowHueRef.current + 4) % 360;
+      ctx.strokeStyle = `hsl(${rainbowHueRef.current}, 100%, 50%)`;
       ctx.lineWidth = brushSize;
     } else {
       ctx.strokeStyle = brushColor;
       ctx.lineWidth = brushSize;
     }
 
-    ctx.lineTo(x, y);
     ctx.stroke();
+    lastPointRef.current = coords;
   };
 
   const stopDrawing = () => {
     setIsDrawing(false);
+    lastPointRef.current = null;
   };
 
   const clearCanvas = () => {
@@ -303,15 +328,27 @@ export const GamesHub: React.FC = () => {
   // ==========================================
   // 3. TEST REFLEKSU ZSET (SZYBKI KLIKER)
   // ==========================================
+  const profile = data.userProfile;
   const [reflexState, setReflexState] = useState<'idle' | 'waiting' | 'ready' | 'result' | 'early'>('idle');
   const [reactionTime, setReactionTime] = useState<number | null>(null);
-  const [bestReflex, setBestReflex] = useState<number | null>(null);
+  const [bestReflex, setBestReflex] = useState<number | null>(() => {
+    return profile?.reflexRecord || null;
+  });
+  const [recordSavedToast, setRecordSavedToast] = useState(false);
   const startTimeRef = useRef<number>(0);
   const reflexTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Sync with profile record if it changes externally
+  useEffect(() => {
+    if (profile?.reflexRecord) {
+      setBestReflex((prev) => (prev ? Math.min(prev, profile.reflexRecord!) : profile.reflexRecord!));
+    }
+  }, [profile?.reflexRecord]);
 
   const startReflexTest = () => {
     setReflexState('waiting');
     setReactionTime(null);
+    setRecordSavedToast(false);
 
     // Random delay between 1.8s and 4.2s
     const delay = Math.floor(Math.random() * 2400) + 1800;
@@ -333,8 +370,14 @@ export const GamesHub: React.FC = () => {
       const timeMs = Date.now() - startTimeRef.current;
       setReactionTime(timeMs);
       setReflexState('result');
-      if (bestReflex === null || timeMs < bestReflex) {
+
+      // Check if this is a new best score on the user profile
+      const currentBest = bestReflex ?? profile?.reflexRecord ?? null;
+      if (currentBest === null || timeMs < currentBest) {
         setBestReflex(timeMs);
+        setUserProfile({ reflexRecord: timeMs });
+        setRecordSavedToast(true);
+        setTimeout(() => setRecordSavedToast(false), 4000);
       }
     } else if (reflexState === 'idle' || reflexState === 'result' || reflexState === 'early') {
       startReflexTest();
@@ -791,9 +834,9 @@ export const GamesHub: React.FC = () => {
               onClick={handleReflexClick}
               className={`flex-1 min-h-[420px] rounded-3xl p-8 flex flex-col items-center justify-center text-center select-none cursor-pointer transition-all shadow-2xl relative overflow-hidden ${
                 reflexState === 'waiting'
-                  ? 'bg-rose-600 text-white'
+                  ? 'bg-slate-900 border-4 border-rose-500 text-white'
                   : reflexState === 'ready'
-                  ? 'bg-emerald-500 text-white animate-pulse'
+                  ? 'bg-gradient-to-r from-red-500 via-amber-400 via-emerald-400 via-sky-400 via-indigo-500 to-purple-600 animate-pulse text-white shadow-2xl scale-[1.01]'
                   : reflexState === 'early'
                   ? 'bg-amber-600 text-white'
                   : reflexState === 'result'
@@ -810,7 +853,7 @@ export const GamesHub: React.FC = () => {
                     Test Czasu Reakcji ZSET
                   </h3>
                   <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 leading-relaxed">
-                    Kliknij w dowolne miejsce, aby rozpocząć. Czekaj na zielone, a gdy pojawi się napis <strong>„Spust!”</strong> — kliknij tak szybko, jak potrafisz!
+                    Kliknij w dowolne miejsce, aby rozpocząć. Czekaj na tęczowe, a gdy ekran zmieni barwy na tęczę i pojawi się napis <strong>„Spust!”</strong> — kliknij tak szybko, jak potrafisz!
                   </p>
                   <button className="px-6 py-3 rounded-2xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-sm shadow-md transition-all cursor-pointer">
                     Kliknij, aby rozpocząć
@@ -820,21 +863,21 @@ export const GamesHub: React.FC = () => {
 
               {reflexState === 'waiting' && (
                 <div className="space-y-3">
-                  <div className="text-4xl sm:text-5xl font-black font-display tracking-tight">
-                    Czekaj na zielone...
+                  <div className="text-4xl sm:text-5xl font-black font-display tracking-tight text-rose-400 animate-pulse">
+                    Czekaj na tęczowe...
                   </div>
-                  <p className="text-sm text-rose-100 font-medium">
-                    Nie klikaj jeszcze! Skup się!
+                  <p className="text-sm text-slate-300 font-medium">
+                    Nie klikaj jeszcze! Wypatruj kolorów tęczy na całym ekranie!
                   </p>
                 </div>
               )}
 
               {reflexState === 'ready' && (
                 <div className="space-y-3 animate-in zoom-in-95">
-                  <div className="text-6xl sm:text-8xl font-black font-display tracking-tight uppercase drop-shadow-md">
-                    Spust!
+                  <div className="text-6xl sm:text-8xl font-black font-display tracking-tight uppercase drop-shadow-lg text-white">
+                    SPUST! 🌈
                   </div>
-                  <p className="text-sm sm:text-base text-emerald-100 font-bold uppercase tracking-wider">
+                  <p className="text-base sm:text-xl text-white font-black uppercase tracking-wider drop-shadow-md">
                     KLIKAJ TERAZ! ⚡
                   </p>
                 </div>
@@ -846,13 +889,20 @@ export const GamesHub: React.FC = () => {
                     Falstart! Za wcześnie! 😅
                   </div>
                   <p className="text-xs text-amber-100">
-                    Kliknąłeś zanim ekran zmienił kolor na zielony. Kliknij ponownie, aby spróbować jeszcze raz!
+                    Kliknąłeś zanim ekran zmienił kolor na tęczowy. Kliknij ponownie, aby spróbować jeszcze raz!
                   </p>
                 </div>
               )}
 
               {reflexState === 'result' && reactionTime && (
                 <div className="space-y-4 max-w-md">
+                  {recordSavedToast && (
+                    <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-amber-400/20 border border-amber-400/40 text-amber-300 text-xs font-bold animate-bounce shadow-lg">
+                      <Trophy className="w-4 h-4 text-amber-400" />
+                      <span>🎉 Nowy rekord zapisany na Twoim koncie!</span>
+                    </div>
+                  )}
+
                   <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 text-xs font-bold text-purple-200 uppercase">
                     Twój wynik
                   </div>
@@ -874,7 +924,7 @@ export const GamesHub: React.FC = () => {
                     );
                   })()}
 
-                  <div className="pt-2">
+                  <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-2">
                     <button
                       onClick={startReflexTest}
                       className="px-6 py-2.5 rounded-2xl bg-white text-slate-900 font-bold text-xs hover:bg-slate-100 transition-colors shadow-md cursor-pointer"
@@ -892,16 +942,22 @@ export const GamesHub: React.FC = () => {
             <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 shadow-xl space-y-4">
               <h4 className="font-bold text-sm text-slate-900 dark:text-white flex items-center gap-2 font-display">
                 <Trophy className="w-4 h-4 text-amber-500" />
-                <span>Twój rekord</span>
+                <span>Twój rekord na koncie</span>
               </h4>
 
-              <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-50 to-amber-100/40 dark:from-amber-950/30 dark:to-slate-900 border border-amber-200 dark:border-amber-900/40 text-center">
-                <span className="text-xs text-amber-700 dark:text-amber-400 font-bold uppercase block mb-1">
-                  Najlepszy czas
+              <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-50 to-amber-100/40 dark:from-amber-950/30 dark:to-slate-900 border border-amber-200 dark:border-amber-900/40 text-center space-y-1">
+                <span className="text-[11px] text-amber-700 dark:text-amber-400 font-bold uppercase block">
+                  Rekord użytkownika ({profile?.displayName || profile?.username || 'Ty'})
                 </span>
                 <div className="text-4xl font-black text-amber-600 dark:text-amber-400 font-display">
                   {bestReflex ? `${bestReflex} ms` : '—'}
                 </div>
+                {bestReflex && (
+                  <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold flex items-center justify-center gap-1 pt-1">
+                    <Check className="w-3 h-3" />
+                    <span>Trwale powiązany z Twoim profilem</span>
+                  </div>
+                )}
               </div>
 
               <div className="space-y-2 text-xs text-slate-600 dark:text-slate-400 leading-relaxed">

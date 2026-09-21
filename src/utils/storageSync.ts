@@ -201,7 +201,7 @@ export function saveAllData(newData: Partial<AppStateData>): AppStateData {
         currentStatus.error = null;
       } else {
         currentStatus.serverSynced = false;
-        currentStatus.error = 'Błąd zapisu w serwerze Google AI Studio';
+        currentStatus.error = 'Błąd synchronizacji z chmurą';
       }
     } catch (err) {
       console.warn('Google AI Studio server sync error:', err);
@@ -227,6 +227,10 @@ export async function syncWithAiStudioServer(): Promise<AppStateData> {
   try {
     const res = await fetch(API_URL);
     if (res.ok) {
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        throw new Error('Endpoint returned non-JSON response');
+      }
       const json = await res.json();
       if (json.success && json.data) {
         const serverData = json.data;

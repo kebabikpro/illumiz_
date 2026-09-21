@@ -23,6 +23,7 @@ export interface UserProfile {
   nick?: string; // backward-compatibility
   role?: 'admin' | 'user';
   isAdmin?: boolean;
+  reflexRecord?: number;
 }
 
 export interface UserAccount extends UserProfile {

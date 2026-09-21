@@ -532,7 +532,7 @@ export const RouletteWheel: React.FC = () => {
 
             {/* Helper tips */}
             <div className="text-[11px] text-slate-400 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-800">
-              💡 <strong>Zapis danych:</strong> Wpisane opcje koła są natychmiast zapamiętywane w pamięci podręcznej i pliku lokalnym Google AI Studio.
+              💡 <strong>Bezpieczny zapis:</strong> Wpisane opcje koła są natychmiast zapamiętywane w Twojej pamięci profilu.
             </div>
           </div>
         </div>
