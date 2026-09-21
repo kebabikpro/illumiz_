@@ -384,7 +384,10 @@ export async function loginWithGoogle(googleData?: {
   name?: string;
   avatarUrl?: string;
 }): Promise<{ success: boolean; account: UserAccount }> {
-  const email = (googleData?.email || 'kebabpanmuala@gmail.com').trim().toLowerCase();
+  const email = (googleData?.email || '').trim().toLowerCase();
+  if (!email) {
+    throw new Error('Wymagany jest adres e-mail konta Google.');
+  }
   const name = googleData?.name || email.split('@')[0] || 'Uczeń ZSET';
   
   // Try server first

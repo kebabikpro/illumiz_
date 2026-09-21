@@ -461,7 +461,13 @@ app.post('/api/auth/login', (req, res) => {
 app.post('/api/auth/google', (req, res) => {
   const data = readStoredData();
   const { email, name, avatarUrl } = req.body || {};
-  const normalizedEmail = (email || 'kebabpanmuala@gmail.com').trim().toLowerCase();
+  if (!email || typeof email !== 'string' || !email.trim()) {
+    return res.status(400).json({
+      success: false,
+      error: 'Wymagany jest poprawny adres e-mail konta Google.',
+    });
+  }
+  const normalizedEmail = email.trim().toLowerCase();
   const displayName = name || normalizedEmail.split('@')[0] || 'Uczeń ZSET';
   const cleanNick = normalizedEmail.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '') || 'google_user';
 

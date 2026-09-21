@@ -90,8 +90,8 @@ export const AuthModal: React.FC = () => {
 
   // Google modal prompt state
   const [isGoogleCustomizing, setIsGoogleCustomizing] = useState(false);
-  const [googleEmailInput, setGoogleEmailInput] = useState('kebabpanmuala@gmail.com');
-  const [googleNameInput, setGoogleNameInput] = useState('Kebab Pan Muala');
+  const [googleEmailInput, setGoogleEmailInput] = useState('');
+  const [googleNameInput, setGoogleNameInput] = useState('');
 
   // Error & loading
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -191,8 +191,13 @@ export const AuthModal: React.FC = () => {
   const handleGoogleLogin = async (customEmail?: string, customName?: string) => {
     setErrorMessage(null);
     setIsSubmitting(true);
-    const targetEmail = customEmail || googleEmailInput || 'kebabpanmuala@gmail.com';
-    const targetName = customName || googleNameInput || 'Uczeń ZSET';
+    const targetEmail = (customEmail || googleEmailInput).trim();
+    if (!targetEmail) {
+      setIsGoogleCustomizing(true);
+      setIsSubmitting(false);
+      return;
+    }
+    const targetName = customName || googleNameInput || targetEmail.split('@')[0] || 'Uczeń ZSET';
 
     try {
       const result = await loginWithGoogle({
@@ -273,12 +278,12 @@ export const AuthModal: React.FC = () => {
             </div>
           )}
 
-          {/* Quick Google Sign In Option */}
+          {/* Google Sign In Option */}
           <div className="space-y-2">
             {!isGoogleCustomizing ? (
               <button
                 type="button"
-                onClick={() => handleGoogleLogin('kebabpanmuala@gmail.com', 'Kebab Pan Muala')}
+                onClick={() => setIsGoogleCustomizing(true)}
                 className="w-full py-3 px-4 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 text-xs sm:text-sm font-bold flex items-center justify-center gap-3 shadow-xs hover:border-slate-300 dark:hover:border-slate-600 transition-all cursor-pointer group"
               >
                 {/* Official Google G Icon */}
@@ -300,48 +305,39 @@ export const AuthModal: React.FC = () => {
                     d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
                   />
                 </svg>
-                <span>Kontynuuj przez Google (kebabpanmuala@gmail.com)</span>
+                <span>Kontynuuj przez Google</span>
               </button>
             ) : (
               <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-2.5 animate-in fade-in">
                 <div className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                  Wybierz konto Google:
+                  Podaj adres e-mail konta Google:
                 </div>
                 <input
                   type="email"
                   value={googleEmailInput}
                   onChange={(e) => setGoogleEmailInput(e.target.value)}
                   placeholder="twoj-email@gmail.com"
-                  className="w-full px-3 py-2 text-xs rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white"
+                  className="w-full px-3 py-2 text-xs sm:text-sm rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white"
                 />
                 <div className="flex gap-2">
                   <button
                     type="button"
+                    disabled={!googleEmailInput.trim()}
                     onClick={() => handleGoogleLogin(googleEmailInput, googleEmailInput.split('@')[0])}
-                    className="flex-1 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-colors cursor-pointer"
+                    className="flex-1 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white text-xs font-bold transition-colors cursor-pointer"
                   >
-                    Zaloguj tym mailem Google
+                    Zaloguj przez Google
                   </button>
                   <button
                     type="button"
                     onClick={() => setIsGoogleCustomizing(false)}
-                    className="px-3 py-2 rounded-xl text-xs text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
+                    className="px-3 py-2 rounded-xl text-xs text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 transition-colors cursor-pointer"
                   >
                     Anuluj
                   </button>
                 </div>
               </div>
             )}
-
-            <div className="flex items-center justify-center">
-              <button
-                type="button"
-                onClick={() => setIsGoogleCustomizing(!isGoogleCustomizing)}
-                className="text-[11px] text-slate-500 hover:text-purple-600 dark:hover:text-purple-400 font-medium transition-colors cursor-pointer underline underline-offset-2"
-              >
-                {!isGoogleCustomizing ? 'Zaloguj innym kontem Google' : 'Użyj domyślnego konta Google'}
-              </button>
-            </div>
           </div>
 
           <div className="flex items-center gap-3">
@@ -366,7 +362,7 @@ export const AuthModal: React.FC = () => {
                   value={email}
                   disabled={isSubmitting}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="np. kebabpanmuala@gmail.com lub @illumiz_"
+                  placeholder="np. uczen@zset.leszno.pl lub @twoj_nick"
                   className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-xs sm:text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:opacity-50"
                 />
               </div>

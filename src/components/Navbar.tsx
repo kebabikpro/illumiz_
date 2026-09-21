@@ -22,7 +22,6 @@ import { ZsetPrideLogo } from './ZsetPrideLogo';
 import { useAppData } from '../context/DataContext';
 import { INDIVIDUAL_THEMES } from '../utils/themeManager';
 import { IndividualThemeId } from '../types';
-import { ViewModeSwitch, ViewMode } from './ViewModeSwitch';
 
 interface NavbarProps {
   activeTab: 'home' | 'chat' | 'wheel' | 'metronome' | 'games' | 'links';
@@ -32,8 +31,6 @@ interface NavbarProps {
   onPanicExit: () => void;
   onOpenStorageModal: () => void;
   onOpenProfileModal: () => void;
-  viewMode?: ViewMode;
-  onViewModeChange?: (mode: ViewMode) => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -42,8 +39,6 @@ export const Navbar: React.FC<NavbarProps> = ({
   onPanicExit,
   onOpenStorageModal,
   onOpenProfileModal,
-  viewMode = 'auto',
-  onViewModeChange,
 }) => {
   const { data, activeTheme, setIndividualTheme, isAdmin } = useAppData();
   const profile = data.userProfile;
@@ -92,13 +87,13 @@ export const Navbar: React.FC<NavbarProps> = ({
   };
 
   return (
-    <header className="sticky top-0 z-40 bg-white/90 dark:bg-slate-950/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 transition-colors w-full max-w-full">
-      <div className="w-full max-w-6xl mx-auto px-2.5 sm:px-4 lg:px-6">
-        <div className="flex items-center justify-between h-15 sm:h-18 gap-1.5 sm:gap-3">
+    <header className="sticky top-0 z-40 bg-white/90 dark:bg-slate-950/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 transition-colors w-full">
+      <div className="w-full max-w-6xl mx-auto px-3 sm:px-6 lg:px-8">
+        <div className="flex items-center justify-between h-16 sm:h-18 gap-2 sm:gap-4">
           {/* Logo & Brand */}
           <button
             onClick={() => setActiveTab('home')}
-            className="flex items-center gap-1.5 sm:gap-2.5 text-left group focus:outline-none cursor-pointer flex-shrink-0 min-w-0"
+            className="flex items-center gap-2 sm:gap-2.5 text-left group focus:outline-none cursor-pointer flex-shrink-0"
           >
             <ZsetPrideLogo size="md" variant="badge" />
             <div className="flex flex-col min-w-0">
@@ -109,14 +104,14 @@ export const Navbar: React.FC<NavbarProps> = ({
                   GAYSPACE
                 </span>
               </div>
-              <span className="text-[10px] text-slate-500 dark:text-slate-400 hidden 2xl:inline">
+              <span className="text-[10px] text-slate-500 dark:text-slate-400 hidden xl:inline">
                 Podziemna platforma społecznościowa
               </span>
             </div>
           </button>
 
-          {/* Desktop Navigation (visible on xl+ or in pc mode on lg+) */}
-          <nav className={`${viewMode === 'mobile' ? 'hidden' : viewMode === 'pc' ? 'hidden lg:flex' : 'hidden xl:flex'} items-center gap-0.5 xl:gap-1 bg-slate-100 dark:bg-slate-900/80 p-1 rounded-2xl border border-slate-200/80 dark:border-slate-800 flex-shrink`}>
+          {/* Desktop Navigation Tabs (Visible on lg+) */}
+          <nav className="hidden lg:flex items-center gap-1 bg-slate-100/90 dark:bg-slate-900/90 p-1 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs flex-shrink-0">
             {navItems.map((item) => {
               const Icon = item.icon;
               const isActive = activeTab === item.id;
@@ -125,9 +120,9 @@ export const Navbar: React.FC<NavbarProps> = ({
                   key={item.id}
                   id={`nav-tab-${item.id}`}
                   onClick={() => setActiveTab(item.id as typeof activeTab)}
-                  className={`px-2 xl:px-3 py-1 rounded-xl text-xs xl:text-sm font-semibold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
+                  className={`px-2.5 xl:px-3 py-1.5 rounded-xl text-xs xl:text-sm font-semibold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
                     isActive
-                      ? 'bg-white dark:bg-slate-800 text-purple-600 dark:text-purple-400 shadow-sm'
+                      ? 'bg-white dark:bg-slate-800 text-purple-600 dark:text-purple-400 shadow-xs font-bold'
                       : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                   }`}
                 >
@@ -138,31 +133,20 @@ export const Navbar: React.FC<NavbarProps> = ({
             })}
           </nav>
 
-          {/* Controls: View Mode Switcher, Quick Theme, Storage, Panic Button & Prominent User Profile */}
-          <div className="flex items-center gap-1 sm:gap-1.5 flex-shrink-0">
-            {/* View Mode Switcher (visible in navbar on md+ screens, always in footer/floating pill) */}
-            {onViewModeChange && (
-              <div className="hidden md:flex flex-shrink-0">
-                <ViewModeSwitch
-                  viewMode={viewMode}
-                  onViewModeChange={onViewModeChange}
-                  variant="navbar"
-                />
-              </div>
-            )}
-
+          {/* Right Action Bar (Centrowany i z bezpiecznym marginesem, nigdy nie ucięty) */}
+          <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
             {/* Quick Individual Theme Selector Dropdown */}
             <div className="relative flex-shrink-0" ref={themeMenuRef}>
               <button
                 id="btn-individual-theme-toggle"
                 onClick={() => setIsThemeMenuOpen((prev) => !prev)}
                 title="Wybierz Twój motyw (zmienia wygląd tylko na Twoim ekranie)"
-                className="p-1.5 sm:px-2 sm:py-1.5 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors flex items-center gap-1.5 cursor-pointer text-xs font-semibold flex-shrink-0"
+                className="p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors flex items-center gap-1.5 cursor-pointer text-xs font-semibold flex-shrink-0"
               >
                 <Palette className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-purple-600 dark:text-purple-400 flex-shrink-0" />
-                <span className="hidden 2xl:inline text-[11px] font-medium">{currentThemeObj.name}</span>
+                <span className="hidden xl:inline text-xs font-medium">{currentThemeObj.name}</span>
                 <span
-                  className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                  className="w-2.5 h-2.5 rounded-full flex-shrink-0 ring-1 ring-black/10 dark:ring-white/20"
                   style={{ backgroundColor: currentThemeObj.accentHex }}
                 />
               </button>
@@ -223,17 +207,17 @@ export const Navbar: React.FC<NavbarProps> = ({
               )}
             </div>
 
-            {/* Storage Status & Backup Button (hidden on mobile to give full room to profile) */}
+            {/* Storage Status & Backup Button */}
             <button
               onClick={onOpenStorageModal}
               title="Zarządzaj zapisem danych i kopią zapasową"
-              className="hidden sm:flex p-1.5 sm:px-2 sm:py-1.5 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 text-purple-700 dark:text-purple-300 border border-purple-500/20 text-xs font-semibold items-center gap-1.5 transition-colors cursor-pointer flex-shrink-0"
+              className="p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 text-purple-700 dark:text-purple-300 border border-purple-500/20 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer flex-shrink-0"
             >
               <div className="relative">
                 <Database className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-purple-600 dark:text-purple-400" />
                 <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-slate-900 animate-pulse" />
               </div>
-              <span className="hidden 2xl:inline">Zapis</span>
+              <span className="hidden xl:inline">Zapis</span>
             </button>
 
             {/* Quick Exit (Panic Button) for School Discretion */}
@@ -247,12 +231,12 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span className="hidden xl:inline">Ucieczka</span>
             </button>
 
-            {/* PROMINENT USER PROFILE IN THE TOP RIGHT CORNER (Guaranteed safe margin & no cutoff) */}
+            {/* User Profile in the top right - properly bounded, never cut off */}
             <button
               id="btn-nav-profile"
               onClick={onOpenProfileModal}
-              title="Twój profil ucznia ZSET — kliknij, aby w każdej chwili edytować swój profil"
-              className="flex items-center gap-1.5 sm:gap-2 pl-1 sm:pl-1.5 pr-2 sm:pr-3 py-1 sm:py-1.5 rounded-2xl bg-gradient-to-r from-purple-500/10 via-pink-500/10 to-indigo-500/10 hover:from-purple-500/20 hover:to-indigo-500/20 border border-purple-500/30 hover:border-purple-500/60 transition-all shadow-xs cursor-pointer group flex-shrink-0 max-w-[140px] sm:max-w-[200px]"
+              title="Twój profil ucznia ZSET — kliknij, aby edytować profil"
+              className="flex items-center gap-1.5 sm:gap-2 pl-1.5 pr-2.5 sm:pr-3 py-1 sm:py-1.5 rounded-2xl bg-gradient-to-r from-purple-500/10 via-pink-500/10 to-indigo-500/10 hover:from-purple-500/20 hover:to-indigo-500/20 border border-purple-500/30 hover:border-purple-500/60 transition-all shadow-xs cursor-pointer group flex-shrink-0"
             >
               <div className="relative flex-shrink-0">
                 <div
@@ -267,7 +251,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-emerald-500 border-2 border-white dark:border-slate-900" />
               </div>
 
-              <div className="flex flex-col text-left min-w-0">
+              <div className="flex flex-col text-left min-w-0 max-w-[85px] sm:max-w-[120px]">
                 <span className="text-xs font-bold text-slate-800 dark:text-slate-100 leading-tight truncate">
                   {profile.displayName || profile.nick || 'Mój Profil'}
                 </span>
@@ -278,7 +262,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               </div>
 
               {isAdmin ? (
-                <span className="hidden lg:inline-block text-[9px] px-1.5 py-0.5 rounded-md bg-amber-500/20 text-amber-700 dark:text-amber-300 font-extrabold border border-amber-500/40 flex-shrink-0">
+                <span className="hidden sm:inline-block text-[9px] px-1.5 py-0.5 rounded-md bg-amber-500/20 text-amber-700 dark:text-amber-300 font-extrabold border border-amber-500/40 flex-shrink-0">
                   ADMIN
                 </span>
               ) : (
@@ -290,8 +274,8 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
         </div>
 
-        {/* Mobile / Tablet Navigation Row */}
-        <div className={`${viewMode === 'pc' ? 'hidden' : viewMode === 'mobile' ? 'flex' : 'xl:hidden flex'} items-center justify-around py-2 border-t border-slate-200/80 dark:border-slate-800 gap-1 w-full overflow-x-auto`}>
+        {/* Mobile Navigation Row (visible on < lg screens) */}
+        <div className="lg:hidden flex items-center justify-around py-2 border-t border-slate-200/80 dark:border-slate-800 gap-1 w-full overflow-x-auto">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
