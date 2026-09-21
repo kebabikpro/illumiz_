@@ -110,9 +110,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const savePersonalProfileData = (profile: UserProfile) => {
     const validProfile: UserProfile = {
       ...profile,
-      id: profile.id || generateUserId(),
+      id: profile.id || personalProfile?.id || generateUserId(),
+      email: profile.email || personalProfile?.email,
+      authProvider: profile.authProvider || personalProfile?.authProvider,
       theme: profile.theme || activeTheme,
-      createdAt: profile.createdAt || new Date().toISOString(),
+      createdAt: profile.createdAt || personalProfile?.createdAt || new Date().toISOString(),
     };
 
     setPersonalProfile(validProfile);

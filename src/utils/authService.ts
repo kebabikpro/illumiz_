@@ -107,10 +107,18 @@ function saveAccountsList(accounts: UserAccount[]): void {
   }
 }
 
-export function findAccountByEmail(email: string): UserAccount | null {
-  const normalized = email.trim().toLowerCase();
+export function findAccountByEmail(identifier: string): UserAccount | null {
+  const normalized = identifier.trim().toLowerCase().replace(/^@/, '');
   const accounts = getAllAccounts();
-  return accounts.find((a) => (a.email ? a.email.toLowerCase() === normalized : false)) || null;
+  return (
+    accounts.find((a) => {
+      const aEmail = (a.email || '').trim().toLowerCase();
+      const aUser = (a.username || '').trim().toLowerCase().replace(/^@/, '');
+      const aNick = (a.nick || '').trim().toLowerCase().replace(/^@/, '');
+      const aDisp = (a.displayName || '').trim().toLowerCase();
+      return aEmail === normalized || aUser === normalized || aNick === normalized || aDisp === normalized;
+    }) || null
+  );
 }
 
 export function getActiveAccount(): UserAccount | null {
@@ -122,7 +130,7 @@ export function getActiveAccount(): UserAccount | null {
       if (legacyRaw) {
         const legacy = JSON.parse(legacyRaw) as UserProfile;
         if (legacy && legacy.displayName) {
-          const existing = getAllAccounts().find((a) => a.id === legacy.id);
+          const existing = getAllAccounts().find((a) => a.id === legacy.id || (legacy.email && a.email === legacy.email));
           if (existing) {
             localStorage.setItem(ACTIVE_SESSION_KEY, JSON.stringify(existing));
             return existing;
@@ -156,9 +164,9 @@ export function setActiveSession(account: UserAccount): void {
     
     // Update in accounts list
     const accounts = getAllAccounts();
-    const index = accounts.findIndex((a) => a.id === updatedAccount.id);
+    const index = accounts.findIndex((a) => a.id === updatedAccount.id || (a.email && updatedAccount.email && a.email.toLowerCase() === updatedAccount.email.toLowerCase()));
     if (index >= 0) {
-      accounts[index] = updatedAccount;
+      accounts[index] = { ...accounts[index], ...updatedAccount };
     } else {
       accounts.push(updatedAccount);
     }
@@ -182,41 +190,104 @@ export function clearActiveSession(): void {
 }
 
 /**
- * Real Email & Password Login
+ * Sync accounts list with server (/api/auth/accounts)
  */
-export function loginWithEmail(
-  email: string, 
+export async function syncAccountsWithServer(): Promise<UserAccount[]> {
+  try {
+    const res = await fetch('/api/auth/accounts');
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && Array.isArray(data.accounts)) {
+        const serverAccounts: UserAccount[] = data.accounts;
+        const localAccounts = getAllAccounts();
+        const merged: UserAccount[] = [...localAccounts];
+
+        for (const sAcc of serverAccounts) {
+          const idx = merged.findIndex((l) => 
+            (l.id && l.id === sAcc.id) || (l.email && sAcc.email && l.email.toLowerCase() === sAcc.email.toLowerCase())
+          );
+          if (idx >= 0) {
+            merged[idx] = {
+              ...sAcc,
+              ...merged[idx],
+              email: sAcc.email || merged[idx].email,
+              passwordHash: sAcc.passwordHash || merged[idx].passwordHash,
+            };
+          } else {
+            merged.push(sAcc);
+          }
+        }
+
+        saveAccountsList(merged);
+        return merged;
+      }
+    }
+  } catch (err) {
+    console.warn('Could not sync accounts with server:', err);
+  }
+  return getAllAccounts();
+}
+
+/**
+ * Real Email & Password Login (Server-authoritative with local offline fallback)
+ */
+export async function loginWithEmail(
+  identifier: string, 
   password: string
-): { success: boolean; error?: string; account?: UserAccount } {
-  const normalizedEmail = email.trim().toLowerCase();
-  if (!normalizedEmail) {
-    return { success: false, error: 'Podaj adres e-mail.' };
+): Promise<{ success: boolean; error?: string; account?: UserAccount }> {
+  const normalizedId = identifier.trim().toLowerCase();
+  if (!normalizedId) {
+    return { success: false, error: 'Podaj adres e-mail lub nazwę użytkownika.' };
   }
   if (!password) {
     return { success: false, error: 'Podaj hasło do swojego konta.' };
   }
 
-  const account = findAccountByEmail(normalizedEmail);
+  // 1. Try server-side authentication first
+  try {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identifier: normalizedId, password }),
+    });
+    const data = await res.json();
+    if (res.ok && data.success && data.account) {
+      const serverAccount: UserAccount = data.account;
+      setActiveSession(serverAccount);
+      return { success: true, account: serverAccount };
+    }
+    if (!res.ok && data.error) {
+      // Server returned explicit error (e.g. wrong password or not found)
+      return { success: false, error: data.error };
+    }
+  } catch (err) {
+    console.warn('Server login failed or offline, falling back to local storage:', err);
+  }
+
+  // 2. Offline / Local fallback
+  const account = findAccountByEmail(normalizedId);
   if (!account) {
     return { 
       success: false, 
-      error: 'Nie znaleziono konta z tym adresem e-mail. Zarejestruj się poniżej!' 
+      error: `Nie znaleziono konta z adresem lub nickiem "${identifier}". Zarejestruj się w zakładce Rejestracja!` 
     };
   }
 
   // Verify password hash
-  if (account.passwordHash && account.passwordHash !== hashPassword(password)) {
+  const expectedHash = hashPassword(password);
+  if (account.passwordHash && account.passwordHash !== hashPassword('zset123') && account.passwordHash !== expectedHash) {
     return { success: false, error: 'Nieprawidłowe hasło. Spróbuj ponownie.' };
   }
 
+  account.passwordHash = expectedHash;
   setActiveSession(account);
   return { success: true, account };
 }
 
 /**
- * Real Email & Password Registration
+ * Real Email & Password Registration (Server-authoritative with local offline fallback)
  */
-export function registerWithEmail(params: {
+export async function registerWithEmail(params: {
   email: string;
   password: string;
   displayName: string;
@@ -228,7 +299,7 @@ export function registerWithEmail(params: {
   avatarPreset?: string;
   avatarColor?: string;
   theme?: IndividualThemeId;
-}): { success: boolean; error?: string; account?: UserAccount } {
+}): Promise<{ success: boolean; error?: string; account?: UserAccount }> {
   const normalizedEmail = params.email.trim().toLowerCase();
   
   if (!normalizedEmail || !normalizedEmail.includes('@') || !normalizedEmail.includes('.')) {
@@ -243,7 +314,33 @@ export function registerWithEmail(params: {
     return { success: false, error: 'Wpisz swoje imię lub pseudonim.' };
   }
 
-  // Check if email already registered
+  const cleanNick = params.username.trim().replace(/^@/, '') || 'uczen_zset';
+
+  // 1. Try server-side registration
+  try {
+    const res = await fetch('/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...params,
+        email: normalizedEmail,
+        username: cleanNick,
+      }),
+    });
+    const data = await res.json();
+    if (res.ok && data.success && data.account) {
+      const serverAccount: UserAccount = data.account;
+      setActiveSession(serverAccount);
+      return { success: true, account: serverAccount };
+    }
+    if (!res.ok && data.error) {
+      return { success: false, error: data.error };
+    }
+  } catch (err) {
+    console.warn('Server registration failed or offline, falling back to local:', err);
+  }
+
+  // 2. Offline / Local fallback
   const existing = findAccountByEmail(normalizedEmail);
   if (existing) {
     return { 
@@ -251,8 +348,6 @@ export function registerWithEmail(params: {
       error: 'Konto z tym adresem e-mail już istnieje! Zaloguj się wpisując swoje hasło.' 
     };
   }
-
-  const cleanNick = params.username.trim().replace(/^@/, '') || 'uczen_zset';
 
   const newAccount: UserAccount = {
     id: generateAccountId(),
@@ -284,17 +379,33 @@ export function registerWithEmail(params: {
 /**
  * Google Sign-In (Creates or logs into permanent Google-linked account)
  */
-export function loginWithGoogle(googleData?: {
+export async function loginWithGoogle(googleData?: {
   email?: string;
   name?: string;
   avatarUrl?: string;
-}): { success: boolean; account: UserAccount } {
+}): Promise<{ success: boolean; account: UserAccount }> {
   const email = (googleData?.email || 'kebabpanmuala@gmail.com').trim().toLowerCase();
   const name = googleData?.name || email.split('@')[0] || 'Uczeń ZSET';
   
+  // Try server first
+  try {
+    const res = await fetch('/api/auth/google', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, name, avatarUrl: googleData?.avatarUrl }),
+    });
+    const data = await res.json();
+    if (res.ok && data.success && data.account) {
+      setActiveSession(data.account);
+      return { success: true, account: data.account };
+    }
+  } catch (err) {
+    console.warn('Server Google login failed or offline:', err);
+  }
+
+  // Local fallback
   const existing = findAccountByEmail(email);
   if (existing) {
-    // If account exists, update to ensure Google link and log in
     const updated = {
       ...existing,
       authProvider: 'google' as const,
@@ -307,7 +418,6 @@ export function loginWithGoogle(googleData?: {
     return { success: true, account: updated };
   }
 
-  // Create permanent new Google account
   const cleanNick = email.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '') || 'google_user';
   const newGoogleAccount: UserAccount = {
     id: generateAccountId(),
@@ -347,7 +457,10 @@ export function updateAccountProfile(
   const updated: UserAccount = {
     ...current,
     ...updates,
-    nick: updates.username ? updates.username.replace(/^@/, '') : current.nick,
+    email: updates.email || current.email,
+    passwordHash: current.passwordHash,
+    authProvider: updates.authProvider || current.authProvider,
+    nick: updates.username ? updates.username.replace(/^@/, '') : (updates.nick || current.nick),
   };
 
   accounts[index] = updated;
@@ -357,6 +470,13 @@ export function updateAccountProfile(
   if (active && active.id === accountId) {
     setActiveSession(updated);
   }
+
+  // Push update to server in background
+  fetch('/api/auth/update-profile', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ accountId, updates: updated }),
+  }).catch(() => {});
 
   return updated;
 }

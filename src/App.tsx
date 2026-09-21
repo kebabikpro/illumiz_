@@ -50,9 +50,7 @@ function AppContent() {
 
   // App core content
   const appBody = (
-    <div className={`min-h-screen w-full max-w-full overflow-x-hidden flex flex-col font-sans transition-colors theme-${activeTheme} ${
-      viewMode === 'pc' ? 'min-w-[1024px]' : ''
-    }`}>
+    <div className={`min-h-screen w-full max-w-full overflow-x-hidden flex flex-col font-sans transition-colors theme-${activeTheme}`}>
       {/* Top Navigation Bar */}
       <Navbar
         activeTab={activeTab}
@@ -65,7 +63,7 @@ function AppContent() {
       />
 
       {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 pt-4 sm:pt-6 pb-8 overflow-x-hidden">
+      <main className="flex-1 max-w-6xl w-full mx-auto px-2.5 sm:px-5 lg:px-6 pt-4 sm:pt-6 pb-8 overflow-x-hidden">
         {activeTab === 'home' && (
           <HomeAnnouncements 
             onNavigate={(tab) => setActiveTab(tab)} 
@@ -106,7 +104,7 @@ function AppContent() {
           <div className="flex-1 bg-[#732982]" />
         </div>
 
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 flex flex-col md:flex-row items-center justify-between gap-4 text-xs text-slate-500 dark:text-slate-400">
+        <div className="max-w-6xl mx-auto px-3 sm:px-5 lg:px-6 py-6 sm:py-8 flex flex-col md:flex-row items-center justify-between gap-4 text-xs text-slate-500 dark:text-slate-400">
           <div className="flex items-center gap-3">
             <ZsetPrideLogo size="sm" variant="badge" />
             <div>
@@ -197,7 +195,7 @@ function AppContent() {
 
   // Auto or PC mode
   return (
-    <div className={`w-full ${viewMode === 'pc' ? 'overflow-x-auto min-w-[1024px]' : 'overflow-x-hidden'}`}>
+    <div className="w-full max-w-full overflow-x-hidden">
       {appBody}
 
       {/* Quick floating view mode switch */}

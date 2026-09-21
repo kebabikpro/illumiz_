@@ -83,6 +83,7 @@ export interface AppStateData {
   announcements: Announcement[];
   links: UsefulLink[];
   userProfile: UserProfile;
+  registeredAccounts?: UserAccount[];
   metronome: {
     bpm: number;
     beatsPerBar: number;

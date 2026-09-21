@@ -3,7 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { AppStateData, ChatMessage, WheelOption, Announcement, UsefulLink, UserProfile } from '../types';
+import { AppStateData, ChatMessage, WheelOption, Announcement, UsefulLink, UserProfile, UserAccount } from '../types';
+import { getAllAccounts, syncAccountsWithServer, getActiveAccount, setActiveSession } from './authService';
 
 const STORAGE_KEY = 'zset_gayspace_all_data_v2';
 const API_URL = '/api/storage';
@@ -100,6 +101,8 @@ function normalizeUserProfile(raw: any): UserProfile {
   if (!raw || typeof raw !== 'object') return DEFAULT_CLEAN_STATE.userProfile;
   return {
     id: raw.id || 'usr_default',
+    email: raw.email,
+    authProvider: raw.authProvider,
     displayName: raw.displayName || raw.nick || 'Uczeń ZSET',
     username: raw.username || (raw.nick ? String(raw.nick).toLowerCase().replace(/[^a-z0-9_]/g, '') : 'uczen_zset'),
     avatarUrl: raw.avatarUrl || '',
@@ -109,6 +112,11 @@ function normalizeUserProfile(raw: any): UserProfile {
     bio: raw.bio || 'Uczeń ZSET Leszno. Bezpieczna i otwarta przestrzeń.',
     statusMessage: raw.statusMessage || '🟢 Aktywny na przerwie',
     theme: raw.theme || 'midnight-pride',
+    role: raw.role,
+    isAdmin: raw.isAdmin,
+    createdAt: raw.createdAt,
+    nick: raw.nick,
+    reflexRecord: raw.reflexRecord,
   };
 }
 
@@ -167,9 +175,11 @@ let saveTimer: ReturnType<typeof setTimeout> | null = null;
 
 export function saveAllData(newData: Partial<AppStateData>): AppStateData {
   const current = getLocalData();
+  const allAccounts = getAllAccounts();
   const updated: AppStateData = {
     ...current,
     ...newData,
+    registeredAccounts: allAccounts,
     wheelOptions: [], // Koło fortuny resetuje się po odświeżeniu
     lastSaved: new Date().toISOString(),
   };
@@ -224,6 +234,9 @@ export async function syncWithAiStudioServer(): Promise<AppStateData> {
   currentStatus.isSyncing = true;
   notifyListeners();
 
+  // Also sync accounts with server endpoints
+  syncAccountsWithServer().catch(() => {});
+
   try {
     const res = await fetch(API_URL);
     if (res.ok) {
@@ -256,12 +269,41 @@ export async function syncWithAiStudioServer(): Promise<AppStateData> {
           (l: UsefulLink) => l.id !== 'link-1' && !l.url?.includes('116111') && !l.title?.includes('116 111')
         );
 
+        // Merge server accounts into local accounts
+        if (Array.isArray(serverData.registeredAccounts)) {
+          const localAccs = getAllAccounts();
+          const mergedAccs = [...localAccs];
+          for (const sAcc of serverData.registeredAccounts) {
+            const idx = mergedAccs.findIndex(
+              (l) => (l.id && l.id === sAcc.id) || (l.email && sAcc.email && l.email.toLowerCase() === sAcc.email.toLowerCase())
+            );
+            if (idx >= 0) {
+              mergedAccs[idx] = { ...sAcc, ...mergedAccs[idx], email: sAcc.email || mergedAccs[idx].email };
+            } else {
+              mergedAccs.push(sAcc);
+            }
+          }
+          try {
+            localStorage.setItem('zset_registered_accounts_v1', JSON.stringify(mergedAccs));
+          } catch {}
+
+          // If no active session or active session has missing email, check if we can restore from server data
+          const active = getActiveAccount();
+          if (!active && serverData.userProfile?.email) {
+            const match = mergedAccs.find((a) => a.email?.toLowerCase() === serverData.userProfile.email.toLowerCase());
+            if (match) {
+              setActiveSession(match);
+            }
+          }
+        }
+
         const merged: AppStateData = {
           chatMessages: cleanChats,
           wheelOptions: [], // Zawsze resetuj koło po odświeżeniu
           announcements: cleanAnnouncements,
           links: cleanLinks,
           userProfile: normalizeUserProfile(serverData.userProfile),
+          registeredAccounts: getAllAccounts(),
           metronome: DEFAULT_CLEAN_STATE.metronome,
           lastSaved: serverData.lastSaved || new Date().toISOString(),
         };

@@ -183,7 +183,10 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose }) =
     const isNowAdmin = isAdmin || cleanUsername === 'illumiz_' || cleanUsername === 'illumiz';
 
     const updatedProfile: UserProfile = {
+      ...current,
       id: current.id || ('usr_' + Date.now()),
+      email: current.email,
+      authProvider: current.authProvider,
       displayName: cleanNick,
       username: cleanUsername,
       avatarUrl: avatarUrl.trim(),

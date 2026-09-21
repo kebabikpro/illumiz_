@@ -21,12 +21,16 @@ export function hasPersonalProfile(): boolean {
 export function savePersonalProfile(profile: UserProfile): void {
   const current = getActiveAccount();
   if (current && current.id === profile.id) {
-    updateAccountProfile(current.id, profile);
+    updateAccountProfile(current.id, {
+      ...profile,
+      email: profile.email || current.email,
+      authProvider: profile.authProvider || current.authProvider,
+    });
   } else {
     setActiveSession({
       ...profile,
-      email: profile.email || 'uczen@zset.leszno.pl',
-      authProvider: profile.authProvider || 'email',
+      email: profile.email || (current?.email) || 'uczen@zset.leszno.pl',
+      authProvider: profile.authProvider || (current?.authProvider) || 'email',
       lastLoginAt: new Date().toISOString(),
     });
   }

@@ -96,6 +96,7 @@ export const AuthModal: React.FC = () => {
   // Error & loading
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   if (!isProfileSetupRequired) return null;
@@ -123,69 +124,90 @@ export const AuthModal: React.FC = () => {
   };
 
   // 1. Handle Real Email & Password Login
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
+    setIsSubmitting(true);
 
-    const result = loginWithEmail(email, password);
-    if (!result.success) {
-      setErrorMessage(result.error || 'Błąd logowania.');
-      return;
-    }
+    try {
+      const result = await loginWithEmail(email, password);
+      if (!result.success) {
+        setErrorMessage(result.error || 'Błąd logowania.');
+        return;
+      }
 
-    if (result.account) {
-      savePersonalProfileData(result.account);
+      if (result.account) {
+        savePersonalProfileData(result.account);
+      }
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Wystąpił nieoczekiwany błąd podczas logowania.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   // 2. Handle Real Email & Password Registration
-  const handleRegisterSubmit = (e: React.FormEvent) => {
+  const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
+    setIsSubmitting(true);
 
-    const cleanNick = username.trim().replace(/^@/, '') || displayName.toLowerCase().replace(/\s+/g, '_') || 'uczen';
+    try {
+      const cleanNick = username.trim().replace(/^@/, '') || displayName.toLowerCase().replace(/\s+/g, '_') || 'uczen';
 
-    const result = registerWithEmail({
-      email,
-      password,
-      displayName: displayName.trim(),
-      username: cleanNick,
-      classYear,
-      avatarUrl,
-      avatarPreset,
-      avatarColor,
-      theme: activeTheme || 'midnight-pride',
-      statusMessage: '🟢 Aktywny na przerwie',
-      bio: 'Uczeń ZSET Leszno. Bezpieczna i otwarta przestrzeń.',
-    });
+      const result = await registerWithEmail({
+        email,
+        password,
+        displayName: displayName.trim(),
+        username: cleanNick,
+        classYear,
+        avatarUrl,
+        avatarPreset,
+        avatarColor,
+        theme: activeTheme || 'midnight-pride',
+        statusMessage: '🟢 Aktywny na przerwie',
+        bio: 'Uczeń ZSET Leszno. Bezpieczna i otwarta przestrzeń.',
+      });
 
-    if (!result.success) {
-      setErrorMessage(result.error || 'Błąd rejestracji.');
-      if (result.error?.includes('już istnieje')) {
-        setTimeout(() => setMode('login'), 2000);
+      if (!result.success) {
+        setErrorMessage(result.error || 'Błąd rejestracji.');
+        if (result.error?.includes('już istnieje')) {
+          setTimeout(() => setMode('login'), 2000);
+        }
+        return;
       }
-      return;
-    }
 
-    if (result.account) {
-      savePersonalProfileData(result.account);
+      if (result.account) {
+        savePersonalProfileData(result.account);
+      }
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Wystąpił nieoczekiwany błąd podczas rejestracji.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   // 3. Handle Real Google Login
-  const handleGoogleLogin = (customEmail?: string, customName?: string) => {
+  const handleGoogleLogin = async (customEmail?: string, customName?: string) => {
     setErrorMessage(null);
+    setIsSubmitting(true);
     const targetEmail = customEmail || googleEmailInput || 'kebabpanmuala@gmail.com';
     const targetName = customName || googleNameInput || 'Uczeń ZSET';
 
-    const result = loginWithGoogle({
-      email: targetEmail,
-      name: targetName,
-      avatarUrl: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(targetEmail)}`,
-    });
+    try {
+      const result = await loginWithGoogle({
+        email: targetEmail,
+        name: targetName,
+        avatarUrl: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(targetEmail)}`,
+      });
 
-    if (result.success && result.account) {
-      savePersonalProfileData(result.account);
+      if (result.success && result.account) {
+        savePersonalProfileData(result.account);
+      }
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Wystąpił błąd podczas logowania Google.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -336,15 +358,16 @@ export const AuthModal: React.FC = () => {
               <div>
                 <label className="block text-xs font-bold text-slate-800 dark:text-slate-200 mb-1.5 flex items-center gap-1.5">
                   <Mail className="w-3.5 h-3.5 text-purple-500" />
-                  <span>Adres e-mail</span>
+                  <span>Adres e-mail lub Nazwa użytkownika (@nick)</span>
                 </label>
                 <input
-                  type="email"
+                  type="text"
                   required
                   value={email}
+                  disabled={isSubmitting}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="np. uczen@zset.leszno.pl lub gmail"
-                  className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-xs sm:text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  placeholder="np. kebabpanmuala@gmail.com lub @illumiz_"
+                  className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-xs sm:text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:opacity-50"
                 />
               </div>
 
@@ -367,9 +390,10 @@ export const AuthModal: React.FC = () => {
                   type={showPassword ? 'text' : 'password'}
                   required
                   value={password}
+                  disabled={isSubmitting}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Wpisz hasło do Twojego konta"
-                  className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-xs sm:text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-xs sm:text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:opacity-50"
                 />
               </div>
 
@@ -386,10 +410,15 @@ export const AuthModal: React.FC = () => {
 
               <button
                 type="submit"
-                className="w-full py-3 rounded-2xl bg-gradient-to-r from-purple-600 via-pink-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs sm:text-sm shadow-md transition-all active:scale-98 flex items-center justify-center gap-2 cursor-pointer"
+                disabled={isSubmitting}
+                className="w-full py-3 rounded-2xl bg-gradient-to-r from-purple-600 via-pink-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs sm:text-sm shadow-md transition-all active:scale-98 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
               >
-                <LogIn className="w-4 h-4" />
-                <span>Zaloguj do ZSET GaySpace</span>
+                {isSubmitting ? (
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <LogIn className="w-4 h-4" />
+                )}
+                <span>{isSubmitting ? 'Logowanie i weryfikacja...' : 'Zaloguj do ZSET GaySpace'}</span>
               </button>
 
               <div className="text-center pt-2">
@@ -550,10 +579,15 @@ export const AuthModal: React.FC = () => {
 
               <button
                 type="submit"
-                className="w-full py-3 rounded-2xl bg-gradient-to-r from-purple-600 via-pink-600 to-amber-500 hover:from-purple-500 hover:to-amber-400 text-white font-bold text-xs sm:text-sm shadow-md transition-all active:scale-98 flex items-center justify-center gap-2 cursor-pointer"
+                disabled={isSubmitting}
+                className="w-full py-3 rounded-2xl bg-gradient-to-r from-purple-600 via-pink-600 to-amber-500 hover:from-purple-500 hover:to-amber-400 text-white font-bold text-xs sm:text-sm shadow-md transition-all active:scale-98 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
               >
-                <UserPlus className="w-4 h-4" />
-                <span>Utwórz stałe konto i wejdź</span>
+                {isSubmitting ? (
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <UserPlus className="w-4 h-4" />
+                )}
+                <span>{isSubmitting ? 'Zakładanie i zapisywanie konta...' : 'Utwórz stałe konto i wejdź'}</span>
               </button>
 
               <div className="text-center pt-1">
