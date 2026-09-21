@@ -10,10 +10,33 @@ app.use(express.json({ limit: '10mb' }));
 
 const DATA_DIR = path.join(process.cwd(), 'data');
 const DATA_FILE = path.join(DATA_DIR, 'storage.json');
+const AVATARS_DIR = path.join(DATA_DIR, 'avatars');
 
-// Ensure data directory exists
+// Ensure data and avatars directories exist
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
+}
+if (!fs.existsSync(AVATARS_DIR)) {
+  fs.mkdirSync(AVATARS_DIR, { recursive: true });
+}
+
+// Helper to save base64 data URL to server file
+function saveBase64Avatar(userId: string, dataUrl: string): string {
+  if (!dataUrl || !dataUrl.startsWith('data:image/')) return dataUrl;
+  try {
+    const matches = dataUrl.match(/^data:image\/([a-zA-Z0-9+]+);base64,(.+)$/);
+    if (!matches || matches.length < 3) return dataUrl;
+    const ext = matches[1] === 'jpeg' ? 'jpg' : matches[1];
+    const base64Data = matches[2];
+    const safeUserId = userId.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const filename = `avatar_${safeUserId}.${ext}`;
+    const filePath = path.join(AVATARS_DIR, filename);
+    fs.writeFileSync(filePath, Buffer.from(base64Data, 'base64'));
+    return `/api/avatar/${safeUserId}?v=${Date.now()}`;
+  } catch (err) {
+    console.error('Failed to save avatar image file to disk:', err);
+    return dataUrl;
+  }
 }
 
 function hashPassword(password: string): string {
@@ -347,6 +370,18 @@ app.post('/api/chat/messages', (req, res) => {
     data.chatMessages = [];
   }
 
+  let finalAvatarUrl = (avatarUrl || '').trim();
+  if (finalAvatarUrl.startsWith('data:image/')) {
+    finalAvatarUrl = saveBase64Avatar(senderId || 'anon', finalAvatarUrl);
+  } else if (!finalAvatarUrl && senderId) {
+    const matchedAccount = (data.registeredAccounts || []).find(
+      (a: any) => a.id === senderId || (username && a.username === username)
+    );
+    if (matchedAccount?.avatarUrl) {
+      finalAvatarUrl = matchedAccount.avatarUrl;
+    }
+  }
+
   const nowIso = new Date().toISOString();
   const newMsg = {
     id: 'msg-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
@@ -354,7 +389,7 @@ app.post('/api/chat/messages', (req, res) => {
     sender: (sender || 'Uczeń ZSET').trim(),
     username: (username || 'uczen_zset').trim().replace(/^@/, ''),
     classYear: (classYear || 'ZSET').trim(),
-    avatarUrl: (avatarUrl || '').trim(),
+    avatarUrl: finalAvatarUrl,
     avatarPreset: avatarPreset || 'rainbow-heart',
     avatarColor: avatarColor || 'from-pink-500 via-purple-500 to-indigo-500',
     text: cleanText,
@@ -685,6 +720,11 @@ app.post('/api/auth/update-profile', (req, res) => {
     return res.status(400).json({ success: false, error: 'Brak id konta lub danych do aktualizacji.' });
   }
 
+  // Convert and save base64 avatar to disk file
+  if (updates.avatarUrl && typeof updates.avatarUrl === 'string' && updates.avatarUrl.startsWith('data:image/')) {
+    updates.avatarUrl = saveBase64Avatar(accountId, updates.avatarUrl);
+  }
+
   if (!Array.isArray(data.registeredAccounts)) {
     data.registeredAccounts = [];
   }
@@ -731,19 +771,11 @@ app.post('/api/auth/update-profile', (req, res) => {
     data.registeredAccounts[index] = updated;
   }
 
-  // Also update data.userProfile fallback
-  if (data.userProfile) {
-    data.userProfile = {
-      ...data.userProfile,
-      displayName: updated.displayName,
-      username: updated.username,
-      avatarUrl: updated.avatarUrl || data.userProfile.avatarUrl,
-      avatarPreset: updated.avatarPreset || data.userProfile.avatarPreset,
-      avatarColor: updated.avatarColor || data.userProfile.avatarColor,
-      classYear: updated.classYear || data.userProfile.classYear,
-      bio: updated.bio || data.userProfile.bio,
-    };
-  }
+  // Update server active userProfile
+  data.userProfile = {
+    ...updated,
+    lastSaved: new Date().toISOString(),
+  };
 
   // Synchronize past chat messages sent by this account with their updated avatar and name
   if (Array.isArray(data.chatMessages)) {
@@ -766,7 +798,7 @@ app.post('/api/auth/update-profile', (req, res) => {
   }
 
   writeStoredData(data);
-  res.json({ success: true, account: updated });
+  res.json({ success: true, account: updated, userProfile: data.userProfile });
 });
 
 app.post('/api/auth/save-profile', (req, res) => {
@@ -774,6 +806,13 @@ app.post('/api/auth/save-profile', (req, res) => {
   const profile = req.body?.profile || req.body;
   if (!profile || !profile.id) {
     return res.status(400).json({ success: false, error: 'Nieprawidłowe dane profilu.' });
+  }
+
+  // Convert base64 avatar to persistent disk file
+  let finalAvatarUrl = profile.avatarUrl || '';
+  if (typeof finalAvatarUrl === 'string' && finalAvatarUrl.startsWith('data:image/')) {
+    finalAvatarUrl = saveBase64Avatar(profile.id, finalAvatarUrl);
+    profile.avatarUrl = finalAvatarUrl;
   }
 
   if (!Array.isArray(data.registeredAccounts)) {
@@ -790,7 +829,7 @@ app.post('/api/auth/save-profile', (req, res) => {
     savedAccount = {
       ...existing,
       ...profile,
-      avatarUrl: profile.avatarUrl !== undefined ? profile.avatarUrl : existing.avatarUrl,
+      avatarUrl: finalAvatarUrl !== undefined ? finalAvatarUrl : existing.avatarUrl,
       email: profile.email || existing.email,
       passwordHash: existing.passwordHash,
       lastLoginAt: new Date().toISOString(),
@@ -806,7 +845,7 @@ app.post('/api/auth/save-profile', (req, res) => {
       classYear: profile.classYear || '3TI (Technik Informatyk)',
       statusMessage: profile.statusMessage || '🟢 Aktywny na przerwie',
       bio: profile.bio || 'Uczeń ZSET Leszno.',
-      avatarUrl: profile.avatarUrl || '',
+      avatarUrl: finalAvatarUrl,
       avatarPreset: profile.avatarPreset || 'rainbow-heart',
       avatarColor: profile.avatarColor || 'from-pink-500 via-purple-500 to-indigo-500',
       theme: profile.theme || 'midnight-pride',
@@ -819,7 +858,13 @@ app.post('/api/auth/save-profile', (req, res) => {
     data.registeredAccounts.push(savedAccount);
   }
 
-  if (profile.avatarUrl && Array.isArray(data.chatMessages)) {
+  // Update server active userProfile so other devices automatically see it
+  data.userProfile = {
+    ...savedAccount,
+    lastSaved: new Date().toISOString(),
+  };
+
+  if (Array.isArray(data.chatMessages)) {
     data.chatMessages = data.chatMessages.map((msg: any) => {
       if (
         (msg.senderId && msg.senderId === savedAccount.id) ||
@@ -827,10 +872,11 @@ app.post('/api/auth/save-profile', (req, res) => {
       ) {
         return {
           ...msg,
-          avatarUrl: profile.avatarUrl,
-          avatarPreset: profile.avatarPreset || msg.avatarPreset,
-          avatarColor: profile.avatarColor || msg.avatarColor,
+          avatarUrl: savedAccount.avatarUrl || msg.avatarUrl,
+          avatarPreset: savedAccount.avatarPreset || msg.avatarPreset,
+          avatarColor: savedAccount.avatarColor || msg.avatarColor,
           sender: savedAccount.displayName || msg.sender,
+          classYear: savedAccount.classYear || msg.classYear,
         };
       }
       return msg;
@@ -838,7 +884,83 @@ app.post('/api/auth/save-profile', (req, res) => {
   }
 
   writeStoredData(data);
-  res.json({ success: true, account: savedAccount });
+  res.json({ success: true, account: savedAccount, userProfile: data.userProfile });
+});
+
+// Dedicated Avatar serving endpoint
+app.get('/api/avatar/:userId', (req, res) => {
+  const { userId } = req.params;
+  const safeId = (userId || '').replace(/[^a-zA-Z0-9_-]/g, '_');
+  
+  // Check if file exists on disk
+  const possibleExts = ['jpg', 'png', 'jpeg', 'webp'];
+  for (const ext of possibleExts) {
+    const candidatePath = path.join(AVATARS_DIR, `avatar_${safeId}.${ext}`);
+    if (fs.existsSync(candidatePath)) {
+      res.setHeader('Cache-Control', 'no-cache');
+      return res.sendFile(candidatePath);
+    }
+  }
+
+  // Check stored accounts for avatar
+  const data = readStoredData();
+  const acc = (data.registeredAccounts || []).find((a: any) => a.id === userId || a.username === userId);
+  if (acc && acc.avatarUrl) {
+    if (acc.avatarUrl.startsWith('data:image/')) {
+      const savedPath = saveBase64Avatar(userId, acc.avatarUrl);
+      const filename = `avatar_${safeId}.jpg`;
+      const directPath = path.join(AVATARS_DIR, filename);
+      if (fs.existsSync(directPath)) {
+        return res.sendFile(directPath);
+      }
+    } else if (acc.avatarUrl.startsWith('http')) {
+      return res.redirect(acc.avatarUrl);
+    }
+  }
+
+  return res.status(404).json({ error: 'Avatar not found' });
+});
+
+// Dedicated avatar upload endpoint
+app.post('/api/user/upload-avatar', (req, res) => {
+  const { userId, avatarData } = req.body || {};
+  if (!userId || !avatarData) {
+    return res.status(400).json({ success: false, error: 'Brak userId lub danych obrazu.' });
+  }
+
+  const persistentUrl = saveBase64Avatar(userId, avatarData);
+  const data = readStoredData();
+
+  if (Array.isArray(data.registeredAccounts)) {
+    const acc = data.registeredAccounts.find((a: any) => a.id === userId);
+    if (acc) {
+      acc.avatarUrl = persistentUrl;
+      acc.lastLoginAt = new Date().toISOString();
+    }
+  }
+
+  if (data.userProfile && (data.userProfile.id === userId || !data.userProfile.id)) {
+    data.userProfile.avatarUrl = persistentUrl;
+  }
+
+  if (Array.isArray(data.chatMessages)) {
+    data.chatMessages = data.chatMessages.map((m: any) => {
+      if (m.senderId === userId) {
+        return { ...m, avatarUrl: persistentUrl };
+      }
+      return m;
+    });
+  }
+
+  writeStoredData(data);
+  res.json({ success: true, avatarUrl: persistentUrl });
+});
+
+// Get active profile directly from server
+app.get('/api/user/active-profile', (req, res) => {
+  const data = readStoredData();
+  const activeProfile = data.userProfile || (data.registeredAccounts && data.registeredAccounts[0]) || null;
+  res.json({ success: true, profile: activeProfile, accounts: data.registeredAccounts || [] });
 });
 
 app.post('/api/storage/reset', (req, res) => {

@@ -88,67 +88,73 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   return (
     <header className="sticky top-0 z-40 bg-white/90 dark:bg-slate-950/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 transition-colors w-full">
-      <div className="w-full max-w-6xl mx-auto px-3 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16 sm:h-18 gap-2 sm:gap-4">
-          {/* Logo & Brand */}
-          <button
-            onClick={() => setActiveTab('home')}
-            className="flex items-center gap-2 sm:gap-2.5 text-left group focus:outline-none cursor-pointer flex-shrink-0"
-          >
-            <ZsetPrideLogo size="md" variant="badge" />
-            <div className="flex flex-col min-w-0">
-              <div className="flex items-center gap-1 sm:gap-1.5 font-black text-slate-900 dark:text-white leading-tight font-display tracking-tight text-xs sm:text-base lg:text-lg">
-                <span>ZSET</span>
-                <span className="text-purple-600 dark:text-purple-400">Leszno</span>
-                <span className="hidden sm:inline-block text-[9px] sm:text-xs px-1.5 sm:px-2 py-0.5 rounded-full bg-gradient-to-r from-red-500 via-amber-400 via-emerald-500 to-indigo-500 text-white font-extrabold tracking-wider uppercase ml-0.5 shadow-xs">
-                  GAYSPACE
+      <div className="w-full max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
+        <div className="flex items-center justify-between h-16 sm:h-18 w-full gap-2 sm:gap-4">
+          {/* Left Zone: Logo & Brand (flex-1 to balance right side) */}
+          <div className="flex items-center flex-1 justify-start min-w-0">
+            <button
+              onClick={() => setActiveTab('home')}
+              className="flex items-center gap-2 sm:gap-2.5 text-left group focus:outline-none cursor-pointer flex-shrink-0"
+            >
+              <ZsetPrideLogo size="md" variant="badge" />
+              <div className="flex flex-col min-w-0">
+                <div className="flex items-center gap-1 sm:gap-1.5 font-black text-slate-900 dark:text-white leading-tight font-display tracking-tight text-xs sm:text-base lg:text-lg">
+                  <span>ZSET</span>
+                  <span className="text-purple-600 dark:text-purple-400">Leszno</span>
+                  <span className="hidden sm:inline-block text-[9px] sm:text-xs px-1.5 sm:px-2 py-0.5 rounded-full bg-gradient-to-r from-red-500 via-amber-400 via-emerald-500 to-indigo-500 text-white font-extrabold tracking-wider uppercase ml-0.5 shadow-xs">
+                    GAYSPACE
+                  </span>
+                </div>
+                <span className="text-[10px] text-slate-500 dark:text-slate-400 hidden 2xl:inline">
+                  Podziemna platforma społecznościowa
                 </span>
               </div>
-              <span className="text-[10px] text-slate-500 dark:text-slate-400 hidden xl:inline">
-                Podziemna platforma społecznościowa
-              </span>
-            </div>
-          </button>
+            </button>
+          </div>
 
-          {/* Desktop Navigation Tabs (Visible on lg+) */}
-          <nav className="hidden lg:flex items-center gap-1 bg-slate-100/90 dark:bg-slate-900/90 p-1 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs flex-shrink-0">
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = activeTab === item.id;
-              return (
-                <button
-                  key={item.id}
-                  id={`nav-tab-${item.id}`}
-                  onClick={() => setActiveTab(item.id as typeof activeTab)}
-                  className={`px-2.5 xl:px-3 py-1.5 rounded-xl text-xs xl:text-sm font-semibold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
-                    isActive
-                      ? 'bg-white dark:bg-slate-800 text-purple-600 dark:text-purple-400 shadow-xs font-bold'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-                  }`}
-                >
-                  <Icon className="w-3.5 h-3.5 xl:w-4 xl:h-4 flex-shrink-0" />
-                  <span>{item.label}</span>
-                </button>
-              );
-            })}
-          </nav>
+          {/* Center Zone: Navigation Tabs — Exactly in the middle */}
+          <div className="hidden lg:flex items-center justify-center flex-shrink-0">
+            <nav className="flex items-center gap-1 bg-slate-100/90 dark:bg-slate-900/90 p-1 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs">
+              {navItems.map((item) => {
+                const Icon = item.icon;
+                const isActive = activeTab === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    id={`nav-tab-${item.id}`}
+                    onClick={() => setActiveTab(item.id as typeof activeTab)}
+                    className={`px-2.5 xl:px-3 py-1.5 rounded-xl text-xs xl:text-sm font-semibold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
+                      isActive
+                        ? 'bg-white dark:bg-slate-800 text-purple-600 dark:text-purple-400 shadow-xs font-bold'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                    }`}
+                  >
+                    <Icon className="w-3.5 h-3.5 xl:w-4 xl:h-4 flex-shrink-0" />
+                    <span>{item.label}</span>
+                  </button>
+                );
+              })}
+            </nav>
+          </div>
 
-          {/* Right Action Bar (Centrowany i z bezpiecznym marginesem, nigdy nie ucięty) */}
-          <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
+          {/* Right Zone: Actions & Profile (flex-1 to balance left side, safe spacing, never cut off) */}
+          <div className="flex items-center flex-1 justify-end gap-1.5 sm:gap-2 flex-shrink-0 min-w-0">
             {/* Quick Individual Theme Selector Dropdown */}
             <div className="relative flex-shrink-0" ref={themeMenuRef}>
               <button
                 id="btn-individual-theme-toggle"
                 onClick={() => setIsThemeMenuOpen((prev) => !prev)}
-                title="Wybierz Twój motyw (zmienia wygląd tylko na Twoim ekranie)"
+                title={`Wybierz Twój motyw: ${currentThemeObj.name} (kliknij, aby zmienić)`}
                 className="p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors flex items-center gap-1.5 cursor-pointer text-xs font-semibold flex-shrink-0"
               >
                 <Palette className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-purple-600 dark:text-purple-400 flex-shrink-0" />
-                <span className="hidden xl:inline text-xs font-medium">{currentThemeObj.name}</span>
                 <span
                   className="w-2.5 h-2.5 rounded-full flex-shrink-0 ring-1 ring-black/10 dark:ring-white/20"
                   style={{ backgroundColor: currentThemeObj.accentHex }}
                 />
+                <span className="hidden 2xl:inline text-xs font-medium max-w-[80px] truncate">
+                  {currentThemeObj.name}
+                </span>
               </button>
 
               {isThemeMenuOpen && (

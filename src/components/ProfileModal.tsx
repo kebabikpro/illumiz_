@@ -171,6 +171,21 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose }) =
           ctx.drawImage(img, sx, sy, minDim, minDim, 0, 0, maxSize, maxSize);
           const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.82);
           setAvatarUrl(compressedDataUrl);
+
+          // Upload to server immediately to guarantee cross-device persistence (PC + Phone)
+          const targetId = current.id || ('usr_' + Date.now());
+          fetch('/api/user/upload-avatar', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: targetId, avatarData: compressedDataUrl }),
+          })
+            .then((r) => r.json())
+            .then((resp) => {
+              if (resp.success && resp.avatarUrl) {
+                setAvatarUrl(resp.avatarUrl);
+              }
+            })
+            .catch((err) => console.warn('Avatar server upload error:', err));
         }
       };
       img.src = event.target?.result as string;
@@ -223,6 +238,21 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose }) =
     }
 
     savePersonalProfileData(updatedProfile);
+
+    // Ensure server receives full profile update and responds with disk avatar URL
+    fetch('/api/auth/save-profile', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ profile: updatedProfile }),
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success && data.account) {
+          savePersonalProfileData(data.account);
+        }
+      })
+      .catch((err) => console.warn('Server save profile error:', err));
+
     setSavedToast(true);
     setTimeout(() => {
       setSavedToast(false);
@@ -379,8 +409,9 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose }) =
                 </button>
               )}
 
-              <span className="text-[11px] text-slate-400 text-center sm:text-left">
-                Obsługuje JPG, PNG, WebP. Zdjęcie jest bezpiecznie zapisywane lokalnie.
+              <span className="text-[11px] text-slate-500 dark:text-slate-400 text-center sm:text-left flex items-center gap-1">
+                <span>☁️</span>
+                <span>Zapis serwerowy: zdjęcie jest widoczne dla innych na czacie i synchronizuje się między telefonem a PC.</span>
               </span>
             </div>
 

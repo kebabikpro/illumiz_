@@ -295,10 +295,35 @@ export async function syncWithAiStudioServer(): Promise<AppStateData> {
           }
         }
 
+        // If server has an active user profile, synchronize it
+        if (serverData.userProfile && (serverData.userProfile.displayName || serverData.userProfile.nick || serverData.userProfile.avatarUrl)) {
+          const serverProf = normalizeUserProfile(serverData.userProfile);
+          const currentLocal = getPersonalProfile();
+
+          // If local has no avatar or no profile, or server has newer avatar, adopt server profile
+          if (!currentLocal || (!currentLocal.avatarUrl && serverProf.avatarUrl) || currentLocal.displayName === 'Uczeń ZSET') {
+            const mergedProfile: UserProfile = {
+              ...(currentLocal || {}),
+              ...serverProf,
+              avatarUrl: serverProf.avatarUrl || currentLocal?.avatarUrl || '',
+            };
+            try {
+              localStorage.setItem('zset_profile_persistent_backup_v2', JSON.stringify(mergedProfile));
+              if (mergedProfile.avatarUrl) {
+                localStorage.setItem('zset_avatar_persistent_backup_v2', mergedProfile.avatarUrl);
+              }
+              setActiveSession({
+                ...mergedProfile,
+                lastLoginAt: new Date().toISOString(),
+              });
+            } catch {}
+          }
+        }
+
         const activeUser = getActiveAccount();
         const personalProf = getPersonalProfile();
         const localData = getLocalData();
-        const effectiveUserProfile = personalProf || activeUser || (localData.userProfile?.avatarUrl ? localData.userProfile : normalizeUserProfile(serverData.userProfile));
+        const effectiveUserProfile = personalProf || activeUser || (serverData.userProfile ? normalizeUserProfile(serverData.userProfile) : (localData.userProfile?.avatarUrl ? localData.userProfile : DEFAULT_CLEAN_STATE.userProfile));
 
         const merged: AppStateData = {
           chatMessages: cleanChats,
