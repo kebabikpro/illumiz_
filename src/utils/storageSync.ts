@@ -267,7 +267,7 @@ export async function syncWithAiStudioServer(): Promise<AppStateData> {
           (l: UsefulLink) => l.id !== 'link-1' && !l.url?.includes('116111') && !l.title?.includes('116 111')
         );
 
-        // Merge server accounts into local accounts
+        // Merge server accounts into local accounts database
         if (Array.isArray(serverData.registeredAccounts)) {
           const localAccs = getAllAccounts();
           const mergedAccs = [...localAccs];
@@ -284,46 +284,11 @@ export async function syncWithAiStudioServer(): Promise<AppStateData> {
           try {
             localStorage.setItem('zset_registered_accounts_v1', JSON.stringify(mergedAccs));
           } catch {}
-
-          // If no active session or active session has missing email, check if we can restore from server data
-          const active = getActiveAccount();
-          if (!active && serverData.userProfile?.email) {
-            const match = mergedAccs.find((a) => a.email?.toLowerCase() === serverData.userProfile.email.toLowerCase());
-            if (match) {
-              setActiveSession(match);
-            }
-          }
-        }
-
-        // If server has an active user profile, synchronize it
-        if (serverData.userProfile && (serverData.userProfile.displayName || serverData.userProfile.nick || serverData.userProfile.avatarUrl)) {
-          const serverProf = normalizeUserProfile(serverData.userProfile);
-          const currentLocal = getPersonalProfile();
-
-          // If local has no avatar or no profile, or server has newer avatar, adopt server profile
-          if (!currentLocal || (!currentLocal.avatarUrl && serverProf.avatarUrl) || currentLocal.displayName === 'Uczeń ZSET') {
-            const mergedProfile: UserProfile = {
-              ...(currentLocal || {}),
-              ...serverProf,
-              avatarUrl: serverProf.avatarUrl || currentLocal?.avatarUrl || '',
-            };
-            try {
-              localStorage.setItem('zset_profile_persistent_backup_v2', JSON.stringify(mergedProfile));
-              if (mergedProfile.avatarUrl) {
-                localStorage.setItem('zset_avatar_persistent_backup_v2', mergedProfile.avatarUrl);
-              }
-              setActiveSession({
-                ...mergedProfile,
-                lastLoginAt: new Date().toISOString(),
-              });
-            } catch {}
-          }
         }
 
         const activeUser = getActiveAccount();
         const personalProf = getPersonalProfile();
-        const localData = getLocalData();
-        const effectiveUserProfile = personalProf || activeUser || (serverData.userProfile ? normalizeUserProfile(serverData.userProfile) : (localData.userProfile?.avatarUrl ? localData.userProfile : DEFAULT_CLEAN_STATE.userProfile));
+        const effectiveUserProfile = personalProf || activeUser || DEFAULT_CLEAN_STATE.userProfile;
 
         const merged: AppStateData = {
           chatMessages: cleanChats,

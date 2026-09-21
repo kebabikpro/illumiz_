@@ -302,20 +302,13 @@ app.post('/api/storage', (req, res) => {
   }
   const { cleaned: prunedChatMessages } = pruneExpiredChatMessages(mergedChatMessages);
 
-  // Preserve userProfile if current has a valid avatar and incoming is empty
-  let effectiveUserProfile = current.userProfile;
-  if (incoming.userProfile) {
-    effectiveUserProfile = {
-      ...current.userProfile,
-      ...incoming.userProfile,
-      avatarUrl: incoming.userProfile.avatarUrl || current.userProfile?.avatarUrl || '',
-    };
-  }
+  // Keep global userProfile neutral; each user manages their own session via registeredAccounts
+  const cleanGuestProfile = getInitialCleanState().userProfile;
 
   const merged = {
     ...current,
     ...incoming,
-    userProfile: effectiveUserProfile,
+    userProfile: cleanGuestProfile,
     chatMessages: prunedChatMessages,
     registeredAccounts: mergedAccounts,
     lastSaved: new Date().toISOString(),
@@ -648,16 +641,9 @@ app.post('/api/auth/register', (req, res) => {
   };
 
   data.registeredAccounts.push(newAccount);
-
-  // Set active profile to newly registered user
-  data.userProfile = {
-    ...newAccount,
-    lastSaved: new Date().toISOString(),
-  };
-
   writeStoredData(data);
 
-  res.json({ success: true, account: newAccount, userProfile: data.userProfile });
+  res.json({ success: true, account: newAccount });
 });
 
 app.post('/api/auth/login', (req, res) => {
@@ -872,12 +858,6 @@ app.post('/api/auth/update-profile', (req, res) => {
     data.registeredAccounts[index] = updated;
   }
 
-  // Update server active userProfile
-  data.userProfile = {
-    ...updated,
-    lastSaved: new Date().toISOString(),
-  };
-
   // Synchronize past chat messages sent by this account with their updated avatar and name
   if (Array.isArray(data.chatMessages)) {
     data.chatMessages = data.chatMessages.map((msg: any) => {
@@ -899,7 +879,7 @@ app.post('/api/auth/update-profile', (req, res) => {
   }
 
   writeStoredData(data);
-  res.json({ success: true, account: updated, userProfile: data.userProfile });
+  res.json({ success: true, account: updated });
 });
 
 app.post('/api/auth/save-profile', (req, res) => {
@@ -974,12 +954,6 @@ app.post('/api/auth/save-profile', (req, res) => {
     data.registeredAccounts.push(savedAccount);
   }
 
-  // Update server active userProfile so other devices automatically see it
-  data.userProfile = {
-    ...savedAccount,
-    lastSaved: new Date().toISOString(),
-  };
-
   if (Array.isArray(data.chatMessages)) {
     data.chatMessages = data.chatMessages.map((msg: any) => {
       if (
@@ -1000,7 +974,7 @@ app.post('/api/auth/save-profile', (req, res) => {
   }
 
   writeStoredData(data);
-  res.json({ success: true, account: savedAccount, userProfile: data.userProfile });
+  res.json({ success: true, account: savedAccount });
 });
 
 // Dedicated Avatar serving endpoint
@@ -1073,10 +1047,10 @@ app.post('/api/user/upload-avatar', (req, res) => {
 });
 
 // Get active profile directly from server
+// Active profile endpoint: each client maintains their own session in their browser
 app.get('/api/user/active-profile', (req, res) => {
   const data = readStoredData();
-  const activeProfile = data.userProfile || (data.registeredAccounts && data.registeredAccounts[0]) || null;
-  res.json({ success: true, profile: activeProfile, accounts: data.registeredAccounts || [] });
+  res.json({ success: true, profile: null, accounts: data.registeredAccounts || [] });
 });
 
 app.post('/api/storage/reset', (req, res) => {

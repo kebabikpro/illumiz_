@@ -92,31 +92,31 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     syncWithAiStudioServer().then((synced) => {
       setData(synced);
-      if (synced.userProfile && (synced.userProfile.avatarUrl || !personalProfile || personalProfile.displayName === 'Uczeń ZSET')) {
-        setPersonalProfile((prev) => {
-          if (!prev || !prev.avatarUrl || prev.displayName === 'Uczeń ZSET') {
-            return synced.userProfile;
-          }
-          return prev;
-        });
+      // If this browser already has a logged-in personal account, refresh its data from the server
+      const local = getPersonalProfile();
+      if (local && local.id) {
+        fetch('/api/auth/accounts')
+          .then((res) => res.json())
+          .then((res) => {
+            if (res.success && Array.isArray(res.accounts)) {
+              const matched = res.accounts.find((a: any) => 
+                (a.id && a.id === local.id) || 
+                (local.email && a.email && a.email.toLowerCase() === local.email.toLowerCase())
+              );
+              if (matched) {
+                const refreshed = {
+                  ...local,
+                  ...matched,
+                  avatarUrl: matched.avatarUrl || local.avatarUrl,
+                };
+                setPersonalProfile(refreshed);
+                savePersonalProfile(refreshed);
+              }
+            }
+          })
+          .catch(() => {});
       }
     });
-
-    // Also directly query server active profile
-    fetch('/api/user/active-profile')
-      .then((res) => res.json())
-      .then((res) => {
-        if (res.success && res.profile && (res.profile.avatarUrl || res.profile.displayName)) {
-          setPersonalProfile((prev) => {
-            if (!prev || !prev.avatarUrl || prev.displayName === 'Uczeń ZSET') {
-              savePersonalProfile(res.profile);
-              return res.profile;
-            }
-            return prev;
-          });
-        }
-      })
-      .catch(() => {});
   }, []);
 
   // Individual Theme Switcher (ONLY affects this client/browser, not other users)
@@ -169,7 +169,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       saveAllData({ 
         chatMessages: updatedMessages,
-        userProfile: validProfile, // fallback for single-user contexts
       });
 
       return {
