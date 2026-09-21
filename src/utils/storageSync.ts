@@ -5,6 +5,7 @@
 
 import { AppStateData, ChatMessage, WheelOption, Announcement, UsefulLink, UserProfile, UserAccount } from '../types';
 import { getAllAccounts, syncAccountsWithServer, getActiveAccount, setActiveSession } from './authService';
+import { getPersonalProfile } from './personalAccount';
 
 const STORAGE_KEY = 'zset_gayspace_all_data_v2';
 const API_URL = '/api/storage';
@@ -129,11 +130,9 @@ export function getLocalData(): AppStateData {
     if (!raw) return DEFAULT_CLEAN_STATE;
     const parsed = JSON.parse(raw);
     
-    // Purge any old mock chat messages if present
+    // Filter out only the legacy mock message without wiping real user messages
     let cleanedMessages = Array.isArray(parsed.chatMessages) ? parsed.chatMessages : [];
-    if (cleanedMessages.some((m: ChatMessage) => m.id === 'msg-1' || m.text?.includes('Parku 1000-lecia po 7 lekcji'))) {
-      cleanedMessages = [];
-    }
+    cleanedMessages = cleanedMessages.filter((m: ChatMessage) => m && m.id !== 'msg-1' && !m.text?.includes('Parku 1000-lecia po 7 lekcji'));
 
     // Purge any old preset wheel options if user had old presets stored
     let cleanedWheel = Array.isArray(parsed.wheelOptions) ? parsed.wheelOptions : [];
@@ -248,11 +247,10 @@ export async function syncWithAiStudioServer(): Promise<AppStateData> {
       if (json.success && json.data) {
         const serverData = json.data;
 
-        // Clean out any old mock data
-        let cleanChats = Array.isArray(serverData.chatMessages) ? serverData.chatMessages : [];
-        if (cleanChats.some((m: ChatMessage) => m.id === 'msg-1')) {
-          cleanChats = [];
-        }
+        // Clean out legacy mock data without wiping genuine user chat messages
+        let cleanChats = Array.isArray(serverData.chatMessages) 
+          ? serverData.chatMessages.filter((m: ChatMessage) => m && m.id !== 'msg-1' && !m.text?.includes('Parku 1000-lecia po 7 lekcji'))
+          : [];
 
         let cleanWheel = Array.isArray(serverData.wheelOptions) ? serverData.wheelOptions : [];
         if (cleanWheel.some((w: WheelOption) => w.text === 'Kuba' || w.text === 'Patryk')) {
@@ -297,12 +295,17 @@ export async function syncWithAiStudioServer(): Promise<AppStateData> {
           }
         }
 
+        const activeUser = getActiveAccount();
+        const personalProf = getPersonalProfile();
+        const localData = getLocalData();
+        const effectiveUserProfile = personalProf || activeUser || (localData.userProfile?.avatarUrl ? localData.userProfile : normalizeUserProfile(serverData.userProfile));
+
         const merged: AppStateData = {
           chatMessages: cleanChats,
           wheelOptions: [], // Zawsze resetuj koło po odświeżeniu
           announcements: cleanAnnouncements,
           links: cleanLinks,
-          userProfile: normalizeUserProfile(serverData.userProfile),
+          userProfile: effectiveUserProfile,
           registeredAccounts: getAllAccounts(),
           metronome: DEFAULT_CLEAN_STATE.metronome,
           lastSaved: serverData.lastSaved || new Date().toISOString(),

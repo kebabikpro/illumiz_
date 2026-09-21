@@ -189,6 +189,33 @@ function writeStoredData(data: Record<string, unknown>) {
 const existingData = readStoredData();
 writeStoredData(existingData);
 
+// 3-day retention policy for chat messages
+const CHAT_RETENTION_MS = 3 * 24 * 60 * 60 * 1000; // 3 days in milliseconds
+
+function pruneExpiredChatMessages(messages: any[]): { cleaned: any[]; purgedCount: number } {
+  if (!Array.isArray(messages)) return { cleaned: [], purgedCount: 0 };
+  const now = Date.now();
+  const cleaned = messages.filter((msg) => {
+    if (!msg) return false;
+    // Check createdAt ISO string first
+    if (msg.createdAt) {
+      const msgTime = new Date(msg.createdAt).getTime();
+      if (!isNaN(msgTime) && (now - msgTime) > CHAT_RETENTION_MS) {
+        return false;
+      }
+    } else if (msg.id && typeof msg.id === 'string' && msg.id.startsWith('msg-')) {
+      // Fallback timestamp parse from msg-{epoch}-{random}
+      const parts = msg.id.split('-');
+      const ts = parseInt(parts[1], 10);
+      if (!isNaN(ts) && (now - ts) > CHAT_RETENTION_MS) {
+        return false;
+      }
+    }
+    return true;
+  });
+  return { cleaned, purgedCount: messages.length - cleaned.length };
+}
+
 // API Endpoints for Google AI Studio local filesystem persistence
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', time: new Date().toISOString() });
@@ -196,6 +223,11 @@ app.get('/api/health', (req, res) => {
 
 app.get('/api/storage', (req, res) => {
   const data = readStoredData();
+  const { cleaned, purgedCount } = pruneExpiredChatMessages(data.chatMessages || []);
+  if (purgedCount > 0) {
+    data.chatMessages = cleaned;
+    writeStoredData(data);
+  }
   res.json({
     success: true,
     storageType: 'Google AI Studio Local Storage',
@@ -224,6 +256,7 @@ app.post('/api/storage', (req, res) => {
           ...incAcc,
           email: incAcc.email || mergedAccounts[idx].email,
           passwordHash: incAcc.passwordHash || mergedAccounts[idx].passwordHash,
+          avatarUrl: incAcc.avatarUrl || mergedAccounts[idx].avatarUrl,
         };
       } else {
         mergedAccounts.push(incAcc);
@@ -231,9 +264,36 @@ app.post('/api/storage', (req, res) => {
     }
   }
 
+  // Merge chat messages safely by ID (never wipe server messages with an older client list)
+  let mergedChatMessages = Array.isArray(current.chatMessages) ? [...current.chatMessages] : [];
+  if (Array.isArray(incoming.chatMessages)) {
+    for (const incMsg of incoming.chatMessages) {
+      if (!incMsg || !incMsg.id) continue;
+      const existingIdx = mergedChatMessages.findIndex((m: any) => m.id === incMsg.id);
+      if (existingIdx >= 0) {
+        mergedChatMessages[existingIdx] = { ...mergedChatMessages[existingIdx], ...incMsg };
+      } else {
+        mergedChatMessages.push(incMsg);
+      }
+    }
+  }
+  const { cleaned: prunedChatMessages } = pruneExpiredChatMessages(mergedChatMessages);
+
+  // Preserve userProfile if current has a valid avatar and incoming is empty
+  let effectiveUserProfile = current.userProfile;
+  if (incoming.userProfile) {
+    effectiveUserProfile = {
+      ...current.userProfile,
+      ...incoming.userProfile,
+      avatarUrl: incoming.userProfile.avatarUrl || current.userProfile?.avatarUrl || '',
+    };
+  }
+
   const merged = {
     ...current,
     ...incoming,
+    userProfile: effectiveUserProfile,
+    chatMessages: prunedChatMessages,
     registeredAccounts: mergedAccounts,
     lastSaved: new Date().toISOString(),
   };
@@ -246,10 +306,113 @@ app.post('/api/storage', (req, res) => {
       lastSaved: merged.lastSaved,
       storageFile: 'data/storage.json',
       registeredAccountsCount: mergedAccounts.length,
+      chatMessagesCount: prunedChatMessages.length,
     });
   } else {
     res.status(500).json({ success: false, error: 'Nie udało się zapisać pliku w Google AI Studio' });
   }
+});
+
+// ==========================================
+// UNIFIED REAL-TIME CHAT API (Server-Authoritative)
+// ==========================================
+
+// Get all current chat messages (auto-pruned with 3-day retention)
+app.get('/api/chat/messages', (req, res) => {
+  const data = readStoredData();
+  const { cleaned, purgedCount } = pruneExpiredChatMessages(data.chatMessages || []);
+  if (purgedCount > 0) {
+    data.chatMessages = cleaned;
+    writeStoredData(data);
+  }
+  res.json({
+    success: true,
+    messages: cleaned,
+    serverTime: new Date().toISOString(),
+    retentionDays: 3,
+  });
+});
+
+// Post a new chat message to the shared group chat
+app.post('/api/chat/messages', (req, res) => {
+  const data = readStoredData();
+  const { senderId, sender, username, classYear, avatarUrl, avatarPreset, avatarColor, text, timestamp, createdAt } = req.body || {};
+  
+  const cleanText = typeof text === 'string' ? text.trim() : '';
+  if (!cleanText) {
+    return res.status(400).json({ success: false, error: 'Treść wiadomości nie może być pusta.' });
+  }
+
+  if (!Array.isArray(data.chatMessages)) {
+    data.chatMessages = [];
+  }
+
+  const nowIso = new Date().toISOString();
+  const newMsg = {
+    id: 'msg-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
+    senderId: senderId || 'usr_anon',
+    sender: (sender || 'Uczeń ZSET').trim(),
+    username: (username || 'uczen_zset').trim().replace(/^@/, ''),
+    classYear: (classYear || 'ZSET').trim(),
+    avatarUrl: (avatarUrl || '').trim(),
+    avatarPreset: avatarPreset || 'rainbow-heart',
+    avatarColor: avatarColor || 'from-pink-500 via-purple-500 to-indigo-500',
+    text: cleanText,
+    timestamp: timestamp || new Date().toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' }),
+    createdAt: createdAt || nowIso,
+    reactions: {},
+  };
+
+  data.chatMessages.push(newMsg);
+  const { cleaned } = pruneExpiredChatMessages(data.chatMessages);
+  data.chatMessages = cleaned;
+  writeStoredData(data);
+
+  res.json({
+    success: true,
+    message: newMsg,
+    messages: data.chatMessages,
+  });
+});
+
+// Delete a single message from the shared group chat
+app.delete('/api/chat/messages/:id', (req, res) => {
+  const data = readStoredData();
+  const { id } = req.params;
+  if (!Array.isArray(data.chatMessages)) {
+    data.chatMessages = [];
+  }
+  data.chatMessages = data.chatMessages.filter((m: any) => m.id !== id);
+  writeStoredData(data);
+  res.json({ success: true, messages: data.chatMessages });
+});
+
+// Add reaction to a message
+app.post('/api/chat/messages/:id/react', (req, res) => {
+  const data = readStoredData();
+  const { id } = req.params;
+  const { emoji } = req.body || {};
+  if (!emoji) {
+    return res.status(400).json({ success: false, error: 'Brak emoji reakcji.' });
+  }
+  if (!Array.isArray(data.chatMessages)) {
+    data.chatMessages = [];
+  }
+  const msg = data.chatMessages.find((m: any) => m.id === id);
+  if (msg) {
+    if (!msg.reactions) msg.reactions = {};
+    msg.reactions[emoji] = (msg.reactions[emoji] || 0) + 1;
+    writeStoredData(data);
+  }
+  res.json({ success: true, messages: data.chatMessages });
+});
+
+// Clear chat (admin action)
+app.post('/api/chat/clear', (req, res) => {
+  const data = readStoredData();
+  data.chatMessages = [];
+  writeStoredData(data);
+  res.json({ success: true, message: 'Czat wyczyszczony pomyślnie' });
 });
 
 // Authentication & Account API endpoints
@@ -526,25 +689,156 @@ app.post('/api/auth/update-profile', (req, res) => {
     data.registeredAccounts = [];
   }
 
-  const index = data.registeredAccounts.findIndex((a: any) => a.id === accountId);
+  const index = data.registeredAccounts.findIndex((a: any) => 
+    a.id === accountId || (updates.email && a.email && a.email.toLowerCase() === updates.email.toLowerCase())
+  );
+
+  let updated: any;
   if (index === -1) {
-    return res.status(404).json({ success: false, error: 'Nie znaleziono konta.' });
+    // Upsert new account if not registered yet
+    updated = {
+      id: accountId,
+      email: updates.email || 'uczen@zset.leszno.pl',
+      displayName: updates.displayName || 'Uczeń ZSET',
+      username: updates.username ? updates.username.replace(/^@/, '') : 'uczen_zset',
+      nick: updates.username ? updates.username.replace(/^@/, '') : (updates.nick || 'uczen_zset'),
+      classYear: updates.classYear || '3TI (Technik Informatyk)',
+      statusMessage: updates.statusMessage || '🟢 Aktywny na przerwie',
+      bio: updates.bio || 'Uczeń ZSET Leszno. Bezpieczna i otwarta przestrzeń.',
+      avatarUrl: updates.avatarUrl || '',
+      avatarPreset: updates.avatarPreset || 'rainbow-heart',
+      avatarColor: updates.avatarColor || 'from-pink-500 via-purple-500 to-indigo-500',
+      theme: updates.theme || 'midnight-pride',
+      role: updates.role || (updates.isAdmin ? 'admin' : 'user'),
+      isAdmin: Boolean(updates.isAdmin),
+      authProvider: updates.authProvider || 'email',
+      createdAt: updates.createdAt || new Date().toISOString(),
+      lastLoginAt: new Date().toISOString(),
+    };
+    data.registeredAccounts.push(updated);
+  } else {
+    const current = data.registeredAccounts[index];
+    updated = {
+      ...current,
+      ...updates,
+      avatarUrl: updates.avatarUrl !== undefined ? updates.avatarUrl : current.avatarUrl,
+      email: updates.email || current.email,
+      passwordHash: current.passwordHash,
+      authProvider: updates.authProvider || current.authProvider,
+      nick: updates.username ? updates.username.replace(/^@/, '') : (updates.nick || current.nick),
+      lastLoginAt: new Date().toISOString(),
+    };
+    data.registeredAccounts[index] = updated;
   }
 
-  const current = data.registeredAccounts[index];
-  const updated = {
-    ...current,
-    ...updates,
-    email: updates.email || current.email,
-    passwordHash: current.passwordHash,
-    authProvider: updates.authProvider || current.authProvider,
-    nick: updates.username ? updates.username.replace(/^@/, '') : (updates.nick || current.nick),
-  };
+  // Also update data.userProfile fallback
+  if (data.userProfile) {
+    data.userProfile = {
+      ...data.userProfile,
+      displayName: updated.displayName,
+      username: updated.username,
+      avatarUrl: updated.avatarUrl || data.userProfile.avatarUrl,
+      avatarPreset: updated.avatarPreset || data.userProfile.avatarPreset,
+      avatarColor: updated.avatarColor || data.userProfile.avatarColor,
+      classYear: updated.classYear || data.userProfile.classYear,
+      bio: updated.bio || data.userProfile.bio,
+    };
+  }
 
-  data.registeredAccounts[index] = updated;
+  // Synchronize past chat messages sent by this account with their updated avatar and name
+  if (Array.isArray(data.chatMessages)) {
+    data.chatMessages = data.chatMessages.map((msg: any) => {
+      if (
+        (msg.senderId && msg.senderId === updated.id) ||
+        (msg.username && updated.username && msg.username.toLowerCase() === updated.username.toLowerCase())
+      ) {
+        return {
+          ...msg,
+          avatarUrl: updated.avatarUrl || msg.avatarUrl,
+          avatarPreset: updated.avatarPreset || msg.avatarPreset,
+          avatarColor: updated.avatarColor || msg.avatarColor,
+          sender: updated.displayName || msg.sender,
+          classYear: updated.classYear || msg.classYear,
+        };
+      }
+      return msg;
+    });
+  }
+
   writeStoredData(data);
-
   res.json({ success: true, account: updated });
+});
+
+app.post('/api/auth/save-profile', (req, res) => {
+  const data = readStoredData();
+  const profile = req.body?.profile || req.body;
+  if (!profile || !profile.id) {
+    return res.status(400).json({ success: false, error: 'Nieprawidłowe dane profilu.' });
+  }
+
+  if (!Array.isArray(data.registeredAccounts)) {
+    data.registeredAccounts = [];
+  }
+
+  const index = data.registeredAccounts.findIndex((a: any) => 
+    a.id === profile.id || (profile.email && a.email && a.email.toLowerCase() === profile.email.toLowerCase())
+  );
+
+  let savedAccount: any;
+  if (index >= 0) {
+    const existing = data.registeredAccounts[index];
+    savedAccount = {
+      ...existing,
+      ...profile,
+      avatarUrl: profile.avatarUrl !== undefined ? profile.avatarUrl : existing.avatarUrl,
+      email: profile.email || existing.email,
+      passwordHash: existing.passwordHash,
+      lastLoginAt: new Date().toISOString(),
+    };
+    data.registeredAccounts[index] = savedAccount;
+  } else {
+    savedAccount = {
+      id: profile.id,
+      email: profile.email || 'uczen@zset.leszno.pl',
+      displayName: profile.displayName || 'Uczeń ZSET',
+      username: (profile.username || 'uczen_zset').replace(/^@/, ''),
+      nick: (profile.nick || profile.displayName || 'uczen_zset').replace(/^@/, ''),
+      classYear: profile.classYear || '3TI (Technik Informatyk)',
+      statusMessage: profile.statusMessage || '🟢 Aktywny na przerwie',
+      bio: profile.bio || 'Uczeń ZSET Leszno.',
+      avatarUrl: profile.avatarUrl || '',
+      avatarPreset: profile.avatarPreset || 'rainbow-heart',
+      avatarColor: profile.avatarColor || 'from-pink-500 via-purple-500 to-indigo-500',
+      theme: profile.theme || 'midnight-pride',
+      role: profile.role || (profile.isAdmin ? 'admin' : 'user'),
+      isAdmin: Boolean(profile.isAdmin),
+      authProvider: profile.authProvider || 'email',
+      createdAt: profile.createdAt || new Date().toISOString(),
+      lastLoginAt: new Date().toISOString(),
+    };
+    data.registeredAccounts.push(savedAccount);
+  }
+
+  if (profile.avatarUrl && Array.isArray(data.chatMessages)) {
+    data.chatMessages = data.chatMessages.map((msg: any) => {
+      if (
+        (msg.senderId && msg.senderId === savedAccount.id) ||
+        (msg.username && savedAccount.username && msg.username.toLowerCase() === savedAccount.username.toLowerCase())
+      ) {
+        return {
+          ...msg,
+          avatarUrl: profile.avatarUrl,
+          avatarPreset: profile.avatarPreset || msg.avatarPreset,
+          avatarColor: profile.avatarColor || msg.avatarColor,
+          sender: savedAccount.displayName || msg.sender,
+        };
+      }
+      return msg;
+    });
+  }
+
+  writeStoredData(data);
+  res.json({ success: true, account: savedAccount });
 });
 
 app.post('/api/storage/reset', (req, res) => {

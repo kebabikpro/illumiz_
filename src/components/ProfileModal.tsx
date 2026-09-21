@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   X, 
   Upload, 
@@ -116,6 +116,22 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose }) =
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [savedToast, setSavedToast] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Synchronize modal state with latest current profile whenever opened
+  useEffect(() => {
+    if (isOpen && current) {
+      setDisplayName(current.displayName || current.nick || 'Uczeń ZSET');
+      setUsername(current.username || 'uczen_zset');
+      setAvatarUrl(current.avatarUrl || '');
+      setAvatarPreset(current.avatarPreset || 'rainbow-heart');
+      setAvatarColor(current.avatarColor || 'from-pink-500 via-purple-500 to-indigo-500');
+      setClassYear(current.classYear || '3TI (Technik Informatyk)');
+      setStatusMessage(current.statusMessage || '🟢 Aktywny na przerwie');
+      setBio(current.bio || 'Uczeń ZSET Leszno. Bezpieczna i otwarta przestrzeń.');
+      setSelectedTheme(current.theme || activeTheme || 'midnight-pride');
+      setUploadError(null);
+    }
+  }, [isOpen, current]);
 
   if (!isOpen) return null;
 

@@ -42,19 +42,57 @@ export const GroupChat: React.FC = () => {
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<{ id: string; text: string; isMe: boolean } | null>(null);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [isSending, setIsSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const lastMessagesCountRef = useRef<number>(messages.length);
+
+  // Real-time synchronization with server for unified group chat
+  const fetchLatestMessages = async () => {
+    try {
+      const res = await fetch('/api/chat/messages');
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && Array.isArray(json.messages)) {
+          // Check if there are new incoming messages from others to play pop sound
+          if (json.messages.length > lastMessagesCountRef.current) {
+            const newest = json.messages[json.messages.length - 1];
+            if (newest && newest.senderId !== profile.id && soundEnabled) {
+              playChatPop();
+            }
+          }
+          lastMessagesCountRef.current = json.messages.length;
+          setChatMessages(json.messages);
+        }
+      }
+    } catch {}
+  };
+
+  useEffect(() => {
+    // Initial fetch on mount
+    fetchLatestMessages();
+
+    // Poll every 2.5 seconds so messages from all devices and places are unified in real-time
+    const interval = setInterval(() => {
+      fetchLatestMessages();
+    }, 2500);
+
+    return () => clearInterval(interval);
+  }, [soundEnabled, profile.id]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages.length]);
 
-  const handleSendMessage = (e?: React.FormEvent) => {
+  const handleSendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!inputMessage.trim()) return;
+    const text = inputMessage.trim();
+    if (!text || isSending) return;
 
+    setIsSending(true);
     const time = new Date().toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' });
+    const nowIso = new Date().toISOString();
 
-    const newMsg: ChatMessage = {
+    const optimisticMsg: ChatMessage = {
       id: 'msg-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
       senderId: profile.id,
       sender: profile.displayName || profile.nick || 'Uczeń ZSET',
@@ -63,17 +101,37 @@ export const GroupChat: React.FC = () => {
       avatarUrl: profile.avatarUrl || '',
       avatarPreset: profile.avatarPreset || 'rainbow-heart',
       avatarColor: profile.avatarColor || 'from-pink-500 via-purple-500 to-indigo-500',
-      text: inputMessage.trim(),
+      text,
       timestamp: time,
+      createdAt: nowIso,
       reactions: {},
       isCurrentUser: true,
     };
 
-    setChatMessages((prev) => [...prev, newMsg]);
+    setChatMessages((prev) => [...prev, optimisticMsg]);
     setInputMessage('');
 
     if (soundEnabled) {
       playChatPop();
+    }
+
+    try {
+      const res = await fetch('/api/chat/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(optimisticMsg),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && Array.isArray(json.messages)) {
+          lastMessagesCountRef.current = json.messages.length;
+          setChatMessages(json.messages);
+        }
+      }
+    } catch (err) {
+      console.warn('Chat message server broadcast error:', err);
+    } finally {
+      setIsSending(false);
     }
   };
 
@@ -84,7 +142,6 @@ export const GroupChat: React.FC = () => {
     const isSender = Boolean(
       (target.senderId && profile.id && target.senderId === profile.id) ||
       (target.username && profile.username && target.username.toLowerCase() === profile.username.toLowerCase()) ||
-      (target.isCurrentUser) ||
       (target.sender && (profile.displayName || profile.nick) && target.sender === (profile.displayName || profile.nick))
     );
 
@@ -99,7 +156,25 @@ export const GroupChat: React.FC = () => {
     });
   };
 
-  const handleAddReaction = (msgId: string, emoji: string) => {
+  const confirmDeleteMessage = async () => {
+    if (!deleteConfirmTarget) return;
+    const targetId = deleteConfirmTarget.id;
+    setChatMessages((prev) => prev.filter((m) => m.id !== targetId));
+    setDeleteConfirmTarget(null);
+
+    try {
+      const res = await fetch(`/api/chat/messages/${targetId}`, { method: 'DELETE' });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && Array.isArray(json.messages)) {
+          lastMessagesCountRef.current = json.messages.length;
+          setChatMessages(json.messages);
+        }
+      }
+    } catch {}
+  };
+
+  const handleAddReaction = async (msgId: string, emoji: string) => {
     setChatMessages((prev) =>
       prev.map((msg) => {
         if (msg.id === msgId) {
@@ -115,6 +190,20 @@ export const GroupChat: React.FC = () => {
         return msg;
       })
     );
+
+    try {
+      const res = await fetch(`/api/chat/messages/${msgId}/react`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ emoji }),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && Array.isArray(json.messages)) {
+          setChatMessages(json.messages);
+        }
+      }
+    } catch {}
   };
 
   const handleClearChat = () => {
@@ -122,6 +211,14 @@ export const GroupChat: React.FC = () => {
       return;
     }
     setShowClearConfirm(true);
+  };
+
+  const confirmClearChat = async () => {
+    clearChatMessages();
+    setShowClearConfirm(false);
+    try {
+      await fetch('/api/chat/clear', { method: 'POST' });
+    } catch {}
   };
 
   const quickEmojis = ['🏳️‍🌈', '❤️', '🔥', '☕', '✨', '😂', '👍', '🍕'];
@@ -256,16 +353,23 @@ export const GroupChat: React.FC = () => {
               const isMe = Boolean(
                 (msg.senderId && profile.id && msg.senderId === profile.id) ||
                 (msg.username && profile.username && msg.username.toLowerCase() === profile.username.toLowerCase()) ||
-                (msg.isCurrentUser) ||
                 (msg.sender && (profile.displayName || profile.nick) && msg.sender === (profile.displayName || profile.nick))
               );
               const canDelete = isMe || isAdmin;
-              const senderName = isMe ? (profile.displayName || profile.nick || 'Uczeń ZSET') : msg.sender;
-              const senderUsername = isMe ? (profile.username || 'uczen_zset') : msg.username;
-              const senderClassYear = isMe ? (profile.classYear || 'ZSET') : msg.classYear;
-              const senderAvatarUrl = isMe ? profile.avatarUrl : msg.avatarUrl;
-              const senderAvatarPreset = isMe ? profile.avatarPreset : msg.avatarPreset;
-              const senderAvatarColor = isMe ? (profile.avatarColor || 'from-pink-500 via-purple-500 to-indigo-500') : msg.avatarColor;
+
+              // Check if author exists in registeredAccounts for up-to-date avatar & profile info
+              const registeredSender = data.registeredAccounts?.find(
+                (a) =>
+                  (msg.senderId && a.id === msg.senderId) ||
+                  (msg.username && a.username && a.username.toLowerCase() === msg.username.toLowerCase())
+              );
+
+              const senderName = isMe ? (profile.displayName || profile.nick || 'Uczeń ZSET') : (registeredSender?.displayName || msg.sender);
+              const senderUsername = isMe ? (profile.username || 'uczen_zset') : (registeredSender?.username || msg.username);
+              const senderClassYear = isMe ? (profile.classYear || 'ZSET') : (registeredSender?.classYear || msg.classYear);
+              const senderAvatarUrl = isMe ? (profile.avatarUrl || '') : (registeredSender?.avatarUrl || msg.avatarUrl || '');
+              const senderAvatarPreset = isMe ? (profile.avatarPreset || 'rainbow-heart') : (registeredSender?.avatarPreset || msg.avatarPreset || 'rainbow-heart');
+              const senderAvatarColor = isMe ? (profile.avatarColor || 'from-pink-500 via-purple-500 to-indigo-500') : (registeredSender?.avatarColor || msg.avatarColor || 'from-purple-500 to-indigo-600');
 
               return (
                 <div
@@ -376,6 +480,19 @@ export const GroupChat: React.FC = () => {
           </div>
 
           <form onSubmit={handleSendMessage} className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsProfileModalOpen(true)}
+              title="Twój awatar (kliknij, aby edytować)"
+              className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-pink-500 via-purple-500 to-indigo-500 flex-shrink-0 overflow-hidden flex items-center justify-center text-white border border-purple-300 dark:border-purple-700/60 shadow-xs hover:opacity-90 transition-opacity cursor-pointer"
+            >
+              {profile.avatarUrl ? (
+                <img src={profile.avatarUrl} alt="Twój awatar" className="w-full h-full object-cover" />
+              ) : (
+                <span className="text-lg">{getPresetEmoji(profile.avatarPreset)}</span>
+              )}
+            </button>
+
             <input
               type="text"
               id="input-chat-message"
@@ -539,10 +656,7 @@ export const GroupChat: React.FC = () => {
                 Anuluj
               </button>
               <button
-                onClick={() => {
-                  setChatMessages((prev) => prev.filter((m) => m.id !== deleteConfirmTarget.id));
-                  setDeleteConfirmTarget(null);
-                }}
+                onClick={confirmDeleteMessage}
                 className="px-4 py-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white shadow-md cursor-pointer transition-colors"
               >
                 Usuń wiadomość
@@ -576,10 +690,7 @@ export const GroupChat: React.FC = () => {
                 Anuluj
               </button>
               <button
-                onClick={() => {
-                  clearChatMessages();
-                  setShowClearConfirm(false);
-                }}
+                onClick={confirmClearChat}
                 className="px-4 py-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white shadow-md cursor-pointer transition-colors"
               >
                 Wyczyść cały czat

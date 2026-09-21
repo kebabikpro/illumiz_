@@ -42,6 +42,7 @@ export interface ChatMessage {
   avatarColor: string;
   text: string;
   timestamp: string;
+  createdAt?: string; // ISO string for 3-day retention
   reactions: { [emoji: string]: number };
   userReacted?: string[];
   isCurrentUser?: boolean;
