@@ -476,6 +476,80 @@ app.get('/api/auth/accounts', (req, res) => {
   res.json({ success: true, accounts: safeAccounts });
 });
 
+// Helpers for uniqueness normalization
+function normalizeUsername(raw: any): string {
+  if (!raw || typeof raw !== 'string') return '';
+  return raw.trim().toLowerCase().replace(/^@+/, '').replace(/[^a-z0-9_.-]/g, '');
+}
+
+function normalizeEmail(raw: any): string {
+  if (!raw || typeof raw !== 'string') return '';
+  return raw.trim().toLowerCase();
+}
+
+app.get('/api/auth/check-availability', (req, res) => {
+  const data = readStoredData();
+  const rawUsername = req.query.username as string | undefined;
+  const rawEmail = req.query.email as string | undefined;
+  const excludeId = req.query.excludeId as string | undefined;
+
+  const cleanUser = normalizeUsername(rawUsername);
+  const cleanMail = normalizeEmail(rawEmail);
+
+  const accounts = Array.isArray(data.registeredAccounts) ? data.registeredAccounts : [];
+
+  let usernameAvailable = true;
+  let usernameMessage = '';
+  if (cleanUser) {
+    if (cleanUser.length < 3) {
+      usernameAvailable = false;
+      usernameMessage = 'Nazwa użytkownika musi mieć min. 3 znaki.';
+    } else {
+      const takenBy = accounts.find((a: any) => {
+        if (excludeId && a.id === excludeId) return false;
+        const u = normalizeUsername(a.username);
+        const n = normalizeUsername(a.nick);
+        return (u && u === cleanUser) || (n && n === cleanUser);
+      });
+      if (takenBy) {
+        usernameAvailable = false;
+        usernameMessage = `Nazwa @${cleanUser} jest już zajęta. Wybierz inną!`;
+      } else {
+        usernameAvailable = true;
+        usernameMessage = `Nazwa @${cleanUser} jest dostępna!`;
+      }
+    }
+  }
+
+  let emailAvailable = true;
+  let emailMessage = '';
+  if (cleanMail) {
+    if (!cleanMail.includes('@') || !cleanMail.includes('.')) {
+      emailAvailable = false;
+      emailMessage = 'Niepoprawny format adresu e-mail.';
+    } else {
+      const takenBy = accounts.find((a: any) => {
+        if (excludeId && a.id === excludeId) return false;
+        const m = normalizeEmail(a.email);
+        return m && m === cleanMail;
+      });
+      if (takenBy) {
+        emailAvailable = false;
+        emailMessage = 'Ten adres e-mail jest już zarejestrowany.';
+      } else {
+        emailAvailable = true;
+        emailMessage = 'Adres e-mail jest dostępny!';
+      }
+    }
+  }
+
+  res.json({
+    success: true,
+    username: { normalized: cleanUser, available: usernameAvailable, message: usernameMessage },
+    email: { normalized: cleanMail, available: emailAvailable, message: emailMessage },
+  });
+});
+
 app.post('/api/auth/register', (req, res) => {
   const data = readStoredData();
   const {
@@ -492,7 +566,7 @@ app.post('/api/auth/register', (req, res) => {
     statusMessage,
   } = req.body || {};
 
-  const normalizedEmail = (email || '').trim().toLowerCase();
+  const normalizedEmail = normalizeEmail(email);
   if (!normalizedEmail || !normalizedEmail.includes('@') || !normalizedEmail.includes('.')) {
     return res.status(400).json({ success: false, error: 'Wpisz poprawny adres e-mail (np. uczen@gmail.com).' });
   }
@@ -502,55 +576,58 @@ app.post('/api/auth/register', (req, res) => {
   }
 
   const cleanDisplayName = (displayName || '').trim() || 'Uczeń ZSET';
-  const cleanNick = (username || '').trim().toLowerCase().replace(/^@/, '').replace(/[^a-z0-9_]/g, '') || 
-                    cleanDisplayName.toLowerCase().replace(/\s+/g, '_') || 'uczen_zset';
+  const cleanNick = normalizeUsername(username) || 
+                    normalizeUsername(cleanDisplayName.replace(/\s+/g, '_')) || 
+                    'uczen_zset';
+
+  if (cleanNick.length < 3) {
+    return res.status(400).json({ 
+      success: false, 
+      error: 'Nazwa użytkownika (@nick) musi mieć co najmniej 3 znaki (litery, cyfry, podkreślenie lub kropka).' 
+    });
+  }
 
   if (!Array.isArray(data.registeredAccounts)) {
     data.registeredAccounts = [];
   }
 
-  const existingIndex = data.registeredAccounts.findIndex((a: any) => 
-    a.email && a.email.toLowerCase().trim() === normalizedEmail
+  // 1. STRICT EMAIL UNIQUENESS CHECK
+  const existingEmailAccount = data.registeredAccounts.find((a: any) => 
+    normalizeEmail(a.email) === normalizedEmail
   );
-
-  const isAdmin = normalizedEmail === 'kebabpanmuala@gmail.com' || cleanNick === 'illumiz_' || cleanNick === 'illumiz';
-
-  if (existingIndex >= 0) {
-    const existing = data.registeredAccounts[existingIndex];
-    // If account was created without custom password, or has default password:
-    const isDefaultOrEmptyPassword = !existing.passwordHash || 
-                                     existing.passwordHash === hashPassword('zset123') ||
-                                     existing.passwordHash === hashPassword(password);
-
-    if (isDefaultOrEmptyPassword) {
-      existing.passwordHash = hashPassword(password);
-      existing.displayName = cleanDisplayName || existing.displayName;
-      existing.username = cleanNick || existing.username;
-      existing.nick = cleanNick || existing.nick;
-      existing.classYear = classYear || existing.classYear;
-      if (avatarUrl) existing.avatarUrl = avatarUrl;
-      if (avatarPreset) existing.avatarPreset = avatarPreset;
-      if (avatarColor) existing.avatarColor = avatarColor;
-      if (theme) existing.theme = theme;
-      if (bio) existing.bio = bio;
-      if (statusMessage) existing.statusMessage = statusMessage;
-      existing.lastLoginAt = new Date().toISOString();
-      if (isAdmin) {
-        existing.isAdmin = true;
-        existing.role = 'admin';
-      }
-      writeStoredData(data);
-      return res.json({ success: true, account: existing, message: 'Konto zaktualizowane i pomyślnie zarejestrowane!' });
-    }
-
+  if (existingEmailAccount) {
     return res.status(409).json({
       success: false,
-      error: 'Konto z tym adresem e-mail już istnieje! Zaloguj się wpisując swoje hasło.',
+      conflictField: 'email',
+      error: `Konto z adresem e-mail "${normalizedEmail}" jest już zarejestrowane! Zaloguj się wpisując swoje hasło lub użyj innego e-maila.`,
     });
   }
 
+  // 2. STRICT USERNAME UNIQUENESS CHECK
+  // Display name can be identical (e.g. 10 people named Alex or Kuba), but username MUST be unique
+  const existingUsernameAccount = data.registeredAccounts.find((a: any) => {
+    const aUser = normalizeUsername(a.username);
+    const aNick = normalizeUsername(a.nick);
+    return (aUser && aUser === cleanNick) || (aNick && aNick === cleanNick);
+  });
+  if (existingUsernameAccount) {
+    return res.status(409).json({
+      success: false,
+      conflictField: 'username',
+      error: `Nazwa użytkownika "@${cleanNick}" jest już zajęta! Wybierz inną unikalną nazwę (musi być chociaż minimalna różnica, np. dodaj cyfrę lub inny znak).`,
+    });
+  }
+
+  const isAdmin = normalizedEmail === 'kebabpanmuala@gmail.com' || cleanNick === 'illumiz_' || cleanNick === 'illumiz';
+
+  let finalAvatar = (avatarUrl || '').trim();
+  const newAccountId = generateAccountId();
+  if (finalAvatar.startsWith('data:image/')) {
+    finalAvatar = saveBase64Avatar(newAccountId, finalAvatar);
+  }
+
   const newAccount = {
-    id: generateAccountId(),
+    id: newAccountId,
     email: normalizedEmail,
     passwordHash: hashPassword(password),
     authProvider: 'email',
@@ -560,7 +637,7 @@ app.post('/api/auth/register', (req, res) => {
     classYear: classYear || '3TI (Technik Informatyk)',
     statusMessage: statusMessage || '🟢 Aktywny na przerwie',
     bio: bio || 'Uczeń ZSET Leszno. Bezpieczna i otwarta przestrzeń.',
-    avatarUrl: avatarUrl || '',
+    avatarUrl: finalAvatar,
     avatarPreset: avatarPreset || 'rainbow-heart',
     avatarColor: avatarColor || 'from-pink-500 via-purple-500 to-indigo-500',
     theme: theme || 'midnight-pride',
@@ -571,9 +648,16 @@ app.post('/api/auth/register', (req, res) => {
   };
 
   data.registeredAccounts.push(newAccount);
+
+  // Set active profile to newly registered user
+  data.userProfile = {
+    ...newAccount,
+    lastSaved: new Date().toISOString(),
+  };
+
   writeStoredData(data);
 
-  res.json({ success: true, account: newAccount });
+  res.json({ success: true, account: newAccount, userProfile: data.userProfile });
 });
 
 app.post('/api/auth/login', (req, res) => {
@@ -720,13 +804,30 @@ app.post('/api/auth/update-profile', (req, res) => {
     return res.status(400).json({ success: false, error: 'Brak id konta lub danych do aktualizacji.' });
   }
 
+  if (!Array.isArray(data.registeredAccounts)) {
+    data.registeredAccounts = [];
+  }
+
+  // Prevent claiming a username that already belongs to someone else
+  if (updates.username || updates.nick) {
+    const targetUser = normalizeUsername(updates.username || updates.nick);
+    if (targetUser && targetUser.length >= 3) {
+      const clash = data.registeredAccounts.find((a: any) => 
+        a.id !== accountId && 
+        (normalizeUsername(a.username) === targetUser || normalizeUsername(a.nick) === targetUser)
+      );
+      if (clash) {
+        return res.status(409).json({
+          success: false,
+          error: `Nazwa użytkownika "@${targetUser}" jest już zajęta przez inne konto! Wybierz inną unikalną nazwę.`,
+        });
+      }
+    }
+  }
+
   // Convert and save base64 avatar to disk file
   if (updates.avatarUrl && typeof updates.avatarUrl === 'string' && updates.avatarUrl.startsWith('data:image/')) {
     updates.avatarUrl = saveBase64Avatar(accountId, updates.avatarUrl);
-  }
-
-  if (!Array.isArray(data.registeredAccounts)) {
-    data.registeredAccounts = [];
   }
 
   const index = data.registeredAccounts.findIndex((a: any) => 
@@ -817,6 +918,21 @@ app.post('/api/auth/save-profile', (req, res) => {
 
   if (!Array.isArray(data.registeredAccounts)) {
     data.registeredAccounts = [];
+  }
+
+  // Prevent claiming a username that belongs to someone else
+  const targetUser = normalizeUsername(profile.username || profile.nick);
+  if (targetUser && targetUser.length >= 3) {
+    const clash = data.registeredAccounts.find((a: any) => 
+      a.id !== profile.id && 
+      (normalizeUsername(a.username) === targetUser || normalizeUsername(a.nick) === targetUser)
+    );
+    if (clash) {
+      return res.status(409).json({
+        success: false,
+        error: `Nazwa użytkownika "@${targetUser}" jest już zajęta przez inne konto! Wybierz inną unikalną nazwę.`,
+      });
+    }
   }
 
   const index = data.registeredAccounts.findIndex((a: any) => 

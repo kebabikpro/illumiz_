@@ -107,6 +107,107 @@ function saveAccountsList(accounts: UserAccount[]): void {
   }
 }
 
+export function normalizeUsername(raw?: string | null): string {
+  if (!raw || typeof raw !== 'string') return '';
+  return raw.trim().toLowerCase().replace(/^@+/, '').replace(/[^a-z0-9_.-]/g, '');
+}
+
+export function normalizeEmail(raw?: string | null): string {
+  if (!raw || typeof raw !== 'string') return '';
+  return raw.trim().toLowerCase();
+}
+
+export function isUsernameTaken(username: string, excludeAccountId?: string): boolean {
+  const clean = normalizeUsername(username);
+  if (!clean || clean.length < 3) return false;
+  const accounts = getAllAccounts();
+  return accounts.some((a) => {
+    if (excludeAccountId && a.id === excludeAccountId) return false;
+    const u = normalizeUsername(a.username);
+    const n = normalizeUsername(a.nick);
+    return (u && u === clean) || (n && n === clean);
+  });
+}
+
+export function isEmailTaken(email: string, excludeAccountId?: string): boolean {
+  const clean = normalizeEmail(email);
+  if (!clean || !clean.includes('@')) return false;
+  const accounts = getAllAccounts();
+  return accounts.some((a) => {
+    if (excludeAccountId && a.id === excludeAccountId) return false;
+    const m = normalizeEmail(a.email);
+    return m && m === clean;
+  });
+}
+
+export async function checkAvailabilityAsync(
+  username?: string,
+  email?: string,
+  excludeId?: string
+): Promise<{
+  username: { available: boolean; message: string };
+  email: { available: boolean; message: string };
+}> {
+  // Try server check first
+  try {
+    const params = new URLSearchParams();
+    if (username) params.set('username', username);
+    if (email) params.set('email', email);
+    if (excludeId) params.set('excludeId', excludeId);
+
+    const res = await fetch(`/api/auth/check-availability?${params.toString()}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success) {
+        return {
+          username: data.username,
+          email: data.email,
+        };
+      }
+    }
+  } catch (err) {
+    console.warn('Server availability check failed, falling back to local DB:', err);
+  }
+
+  // Fallback to local accounts
+  const cleanUser = normalizeUsername(username || '');
+  let userAvail = true;
+  let userMsg = '';
+  if (cleanUser) {
+    if (cleanUser.length < 3) {
+      userAvail = false;
+      userMsg = 'Nazwa użytkownika musi mieć min. 3 znaki.';
+    } else if (isUsernameTaken(cleanUser, excludeId)) {
+      userAvail = false;
+      userMsg = `Nazwa @${cleanUser} jest już zajęta. Wybierz inną!`;
+    } else {
+      userAvail = true;
+      userMsg = `Nazwa @${cleanUser} jest dostępna!`;
+    }
+  }
+
+  const cleanMail = normalizeEmail(email || '');
+  let mailAvail = true;
+  let mailMsg = '';
+  if (cleanMail) {
+    if (!cleanMail.includes('@') || !cleanMail.includes('.')) {
+      mailAvail = false;
+      mailMsg = 'Niepoprawny format adresu e-mail.';
+    } else if (isEmailTaken(cleanMail, excludeId)) {
+      mailAvail = false;
+      mailMsg = 'Ten adres e-mail jest już zarejestrowany.';
+    } else {
+      mailAvail = true;
+      mailMsg = 'Adres e-mail jest dostępny!';
+    }
+  }
+
+  return {
+    username: { available: userAvail, message: userMsg },
+    email: { available: mailAvail, message: mailMsg },
+  };
+}
+
 export function findAccountByEmail(identifier: string): UserAccount | null {
   const normalized = identifier.trim().toLowerCase().replace(/^@/, '');
   const accounts = getAllAccounts();
@@ -300,7 +401,7 @@ export async function registerWithEmail(params: {
   avatarColor?: string;
   theme?: IndividualThemeId;
 }): Promise<{ success: boolean; error?: string; account?: UserAccount }> {
-  const normalizedEmail = params.email.trim().toLowerCase();
+  const normalizedEmail = normalizeEmail(params.email);
   
   if (!normalizedEmail || !normalizedEmail.includes('@') || !normalizedEmail.includes('.')) {
     return { success: false, error: 'Wpisz poprawny adres e-mail (np. uczen@gmail.com).' };
@@ -314,7 +415,31 @@ export async function registerWithEmail(params: {
     return { success: false, error: 'Wpisz swoje imię lub pseudonim.' };
   }
 
-  const cleanNick = params.username.trim().replace(/^@/, '') || 'uczen_zset';
+  const cleanNick = normalizeUsername(params.username) || 
+                    normalizeUsername(params.displayName.replace(/\s+/g, '_')) || 
+                    'uczen_zset';
+
+  if (cleanNick.length < 3) {
+    return { 
+      success: false, 
+      error: 'Nazwa użytkownika (@nick) musi mieć co najmniej 3 znaki (litery, cyfry, podkreślenie).' 
+    };
+  }
+
+  // Pre-check with local accounts
+  if (isEmailTaken(normalizedEmail)) {
+    return {
+      success: false,
+      error: `Konto z adresem e-mail "${normalizedEmail}" już istnieje! Zaloguj się wpisując hasło.`,
+    };
+  }
+
+  if (isUsernameTaken(cleanNick)) {
+    return {
+      success: false,
+      error: `Nazwa użytkownika "@${cleanNick}" jest już zajęta! Wybierz inną unikalną nazwę.`,
+    };
+  }
 
   // 1. Try server-side registration
   try {
@@ -341,14 +466,6 @@ export async function registerWithEmail(params: {
   }
 
   // 2. Offline / Local fallback
-  const existing = findAccountByEmail(normalizedEmail);
-  if (existing) {
-    return { 
-      success: false, 
-      error: 'Konto z tym adresem e-mail już istnieje! Zaloguj się wpisując swoje hasło.' 
-    };
-  }
-
   const newAccount: UserAccount = {
     id: generateAccountId(),
     email: normalizedEmail,

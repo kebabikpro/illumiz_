@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   LogIn, 
   UserPlus, 
@@ -19,10 +19,20 @@ import {
   ShieldCheck, 
   AlertCircle,
   Sparkles,
-  Camera
+  Camera,
+  XCircle,
+  CheckCircle2,
+  Loader2
 } from 'lucide-react';
 import { useAppData } from '../context/DataContext';
-import { loginWithEmail, registerWithEmail, loginWithGoogle } from '../utils/authService';
+import { 
+  loginWithEmail, 
+  registerWithEmail, 
+  loginWithGoogle, 
+  checkAvailabilityAsync, 
+  normalizeUsername, 
+  normalizeEmail 
+} from '../utils/authService';
 import { ZsetPrideLogo } from './ZsetPrideLogo';
 
 const AVATAR_PRESETS = [
@@ -99,6 +109,74 @@ export const AuthModal: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Live availability states for registration
+  const [usernameStatus, setUsernameStatus] = useState<{
+    checking: boolean;
+    available: boolean | null;
+    message: string;
+  }>({ checking: false, available: null, message: '' });
+
+  const [emailStatus, setEmailStatus] = useState<{
+    checking: boolean;
+    available: boolean | null;
+    message: string;
+  }>({ checking: false, available: null, message: '' });
+
+  // Debounced check for unique username and email
+  useEffect(() => {
+    if (mode !== 'register') {
+      setUsernameStatus({ checking: false, available: null, message: '' });
+      setEmailStatus({ checking: false, available: null, message: '' });
+      return;
+    }
+
+    const cleanUser = normalizeUsername(username);
+    const cleanMail = normalizeEmail(email);
+
+    if (!cleanUser && !cleanMail) {
+      setUsernameStatus({ checking: false, available: null, message: '' });
+      setEmailStatus({ checking: false, available: null, message: '' });
+      return;
+    }
+
+    if (cleanUser) {
+      setUsernameStatus((prev) => ({ ...prev, checking: true }));
+    }
+    if (cleanMail) {
+      setEmailStatus((prev) => ({ ...prev, checking: true }));
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        const result = await checkAvailabilityAsync(cleanUser, cleanMail);
+        if (cleanUser) {
+          setUsernameStatus({
+            checking: false,
+            available: result.username.available,
+            message: result.username.message,
+          });
+        } else {
+          setUsernameStatus({ checking: false, available: null, message: '' });
+        }
+
+        if (cleanMail) {
+          setEmailStatus({
+            checking: false,
+            available: result.email.available,
+            message: result.email.message,
+          });
+        } else {
+          setEmailStatus({ checking: false, available: null, message: '' });
+        }
+      } catch {
+        setUsernameStatus((prev) => ({ ...prev, checking: false }));
+        setEmailStatus((prev) => ({ ...prev, checking: false }));
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [username, email, mode]);
+
   if (!isProfileSetupRequired) return null;
 
   // Handle image upload & base64 conversion
@@ -150,11 +228,29 @@ export const AuthModal: React.FC = () => {
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
+
+    const cleanNick = normalizeUsername(username) || 
+                      normalizeUsername(displayName.replace(/\s+/g, '_')) || 
+                      'uczen_zset';
+
+    if (cleanNick.length < 3) {
+      setErrorMessage('Nazwa użytkownika (@nick) musi mieć co najmniej 3 znaki.');
+      return;
+    }
+
+    if (usernameStatus.available === false) {
+      setErrorMessage(usernameStatus.message || `Nazwa użytkownika @${cleanNick} jest już zajęta! Wybierz inną.`);
+      return;
+    }
+
+    if (emailStatus.available === false) {
+      setErrorMessage(emailStatus.message || 'Ten adres e-mail jest już zarejestrowany. Zaloguj się lub użyj innego.');
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
-      const cleanNick = username.trim().replace(/^@/, '') || displayName.toLowerCase().replace(/\s+/g, '_') || 'uczen';
-
       const result = await registerWithEmail({
         email,
         password,
@@ -171,8 +267,8 @@ export const AuthModal: React.FC = () => {
 
       if (!result.success) {
         setErrorMessage(result.error || 'Błąd rejestracji.');
-        if (result.error?.includes('już istnieje')) {
-          setTimeout(() => setMode('login'), 2000);
+        if (result.error?.includes('już istnieje') || result.error?.includes('już zarejestrowane')) {
+          setTimeout(() => setMode('login'), 2500);
         }
         return;
       }
@@ -437,9 +533,26 @@ export const AuthModal: React.FC = () => {
             <form onSubmit={handleRegisterSubmit} className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-bold text-slate-800 dark:text-slate-200 mb-1 flex items-center gap-1.5">
-                    <Mail className="w-3.5 h-3.5 text-purple-500" />
-                    <span>Adres e-mail</span>
+                  <label className="block text-xs font-bold text-slate-800 dark:text-slate-200 mb-1 flex items-center justify-between">
+                    <span className="flex items-center gap-1.5">
+                      <Mail className="w-3.5 h-3.5 text-purple-500" />
+                      <span>Adres e-mail</span>
+                    </span>
+                    {emailStatus.checking && (
+                      <span className="text-[10px] text-slate-400 flex items-center gap-1">
+                        <Loader2 className="w-3 h-3 animate-spin text-purple-500" /> Sprawdzam...
+                      </span>
+                    )}
+                    {!emailStatus.checking && emailStatus.available === true && email.includes('@') && (
+                      <span className="text-[10px] text-emerald-600 dark:text-emerald-400 flex items-center gap-1 font-medium">
+                        <CheckCircle2 className="w-3 h-3" /> Wolny
+                      </span>
+                    )}
+                    {!emailStatus.checking && emailStatus.available === false && (
+                      <span className="text-[10px] text-red-500 flex items-center gap-1 font-semibold">
+                        <XCircle className="w-3 h-3" /> Zajęty
+                      </span>
+                    )}
                   </label>
                   <input
                     type="email"
@@ -447,8 +560,20 @@ export const AuthModal: React.FC = () => {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="twoj-email@gmail.com"
-                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    className={`w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800/80 border text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 ${
+                      emailStatus.available === false
+                        ? 'border-red-500 focus:ring-red-500'
+                        : emailStatus.available === true && email.includes('@')
+                        ? 'border-emerald-500/80 focus:ring-emerald-500'
+                        : 'border-slate-200 dark:border-slate-700 focus:ring-purple-500'
+                    }`}
                   />
+                  {emailStatus.available === false && (
+                    <p className="text-[10px] text-red-500 mt-1 font-medium flex items-center gap-1">
+                      <AlertCircle className="w-3 h-3 flex-shrink-0" />
+                      {emailStatus.message || 'Ten adres e-mail jest już zarejestrowany.'}
+                    </p>
+                  )}
                 </div>
 
                 <div>
@@ -487,25 +612,69 @@ export const AuthModal: React.FC = () => {
                     type="text"
                     required
                     value={displayName}
-                    onChange={(e) => setDisplayName(e.target.value)}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setDisplayName(val);
+                      // If username is empty or unmodified, suggest a normalized handle
+                      if (!username.trim()) {
+                        const suggested = val.trim().toLowerCase().replace(/[^a-z0-9_]/g, '_');
+                        if (suggested) setUsername(suggested);
+                      }
+                    }}
                     placeholder="np. Kuba TI, Alex"
                     className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
                   />
+                  <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">
+                    Może być taka sama u wielu uczniów (widoczna na czacie).
+                  </p>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-800 dark:text-slate-200 mb-1 flex items-center gap-1.5">
-                    <AtSign className="w-3.5 h-3.5 text-indigo-500" />
-                    <span>Nazwa użytkownika (@nick)</span>
+                  <label className="block text-xs font-bold text-slate-800 dark:text-slate-200 mb-1 flex items-center justify-between">
+                    <span className="flex items-center gap-1.5">
+                      <AtSign className="w-3.5 h-3.5 text-indigo-500" />
+                      <span>Nazwa użytkownika (@nick)</span>
+                    </span>
+                    {usernameStatus.checking && (
+                      <span className="text-[10px] text-slate-400 flex items-center gap-1">
+                        <Loader2 className="w-3 h-3 animate-spin text-purple-500" /> Sprawdzam...
+                      </span>
+                    )}
+                    {!usernameStatus.checking && usernameStatus.available === true && username.trim().length >= 3 && (
+                      <span className="text-[10px] text-emerald-600 dark:text-emerald-400 flex items-center gap-1 font-medium">
+                        <CheckCircle2 className="w-3 h-3" /> Wolna
+                      </span>
+                    )}
+                    {!usernameStatus.checking && usernameStatus.available === false && (
+                      <span className="text-[10px] text-red-500 flex items-center gap-1 font-semibold">
+                        <XCircle className="w-3 h-3" /> Zajęta
+                      </span>
+                    )}
                   </label>
                   <input
                     type="text"
                     required
                     value={username}
-                    onChange={(e) => setUsername(e.target.value)}
+                    onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/^@/, ''))}
                     placeholder="kuba_3ti"
-                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    className={`w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800/80 border text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 ${
+                      usernameStatus.available === false
+                        ? 'border-red-500 focus:ring-red-500'
+                        : usernameStatus.available === true && username.trim().length >= 3
+                        ? 'border-emerald-500/80 focus:ring-emerald-500'
+                        : 'border-slate-200 dark:border-slate-700 focus:ring-purple-500'
+                    }`}
                   />
+                  {usernameStatus.available === false ? (
+                    <p className="text-[10px] text-red-500 mt-1 font-medium flex items-center gap-1">
+                      <AlertCircle className="w-3 h-3 flex-shrink-0" />
+                      {usernameStatus.message || 'Nazwa jest już zajęta! Dodaj cyfrę lub inną końcówkę.'}
+                    </p>
+                  ) : (
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
+                      Musi być unikalna w całym systemie (min. drobna różnica, np. cyfra).
+                    </p>
+                  )}
                 </div>
               </div>
 
